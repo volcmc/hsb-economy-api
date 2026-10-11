@@ -40,6 +40,12 @@
           </div>
         </header>
         <div class="tiles" id="item-tiles"></div>
+        <section id="item-plain" class="plain" aria-labelledby="plain-title" hidden>
+          <h4 id="plain-title">Plain copy</h4>
+          <p class="section-note">Copies without stars, recombobulator, potato books, gemstones, Art of War/Peace,
+            ability scrolls, dyes or skins. Reforges and enchantments are allowed.</p>
+          <div class="tiles" id="plain-tiles"></div>
+        </section>
         <div id="item-levels"></div>
 
         <section class="chart-card" aria-labelledby="chart-title">
@@ -58,6 +64,20 @@
           </details>
         </section>
       </article>
+    </section>
+
+    <section aria-labelledby="rankings-title" class="rankings">
+      <div class="section-head">
+        <h2 id="rankings-title">Rankings</h2>
+        <div class="segmented" role="group" aria-label="Ranking">
+          <button type="button" data-ranking="traded" aria-pressed="true">Most traded</button>
+          <button type="button" data-ranking="margins" aria-pressed="false">Bazaar margins</button>
+          <button type="button" data-ranking="rising" aria-pressed="false">Rising</button>
+          <button type="button" data-ranking="falling" aria-pressed="false">Falling</button>
+        </div>
+      </div>
+      <p class="section-note" id="rankings-note"></p>
+      <div class="table-scroll" id="rankings-table"></div>
     </section>
 
     <section aria-labelledby="endpoints-title" class="endpoints">

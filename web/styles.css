@@ -145,6 +145,18 @@ main > section { margin-bottom: 48px; }
 
 .levels { margin-top: 16px; }
 
+.plain { margin-top: 20px; }
+.plain h4 { font-size: 1rem; }
+.section-note { margin: 4px 0 12px; color: var(--text-muted); font-size: 0.8125rem; max-width: 70ch; }
+
+.section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.section-head h2 { margin-bottom: 0; }
+.rankings td.rank { color: var(--text-muted); width: 2.5em; font-variant-numeric: tabular-nums; }
+.rankings td a { color: var(--text-primary); text-decoration: none; font-weight: 500; }
+.rankings td a:hover { text-decoration: underline; }
+.rankings .source { color: var(--text-muted); font-size: 0.8125rem; }
+.rankings .empty-row { color: var(--text-muted); padding: 16px 10px; }
+
 /* Tables */
 .table-scroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
