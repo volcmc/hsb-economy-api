@@ -33,13 +33,14 @@ Keys are Hypixel item ids, except where one id covers items with very different 
 
 | Item | Key | Example |
 | --- | --- | --- |
-| Pets | `PET.<TYPE>.<TIER>` (a held Tier Boost counts as the next rarity) | `PET.ENDER_DRAGON.LEGENDARY` |
+| Pets | `PET.<TYPE>.<TIER>` | `PET.ENDER_DRAGON.LEGENDARY` |
 | Runes | `RUNE.<TYPE>.<LEVEL>`, `UNIQUE_RUNE.<TYPE>.<LEVEL>` | `RUNE.MUSIC.3` |
 | Single-enchant books | `ENCHANTMENT_<NAME>_<LEVEL>` (same as the bazaar id) | `ENCHANTMENT_ULTIMATE_WISE_5` |
 | Potions | `POTION.<EFFECT>.<LEVEL>` | `POTION.ABSORPTION.5` |
 | New Year Cakes | `NEW_YEAR_CAKE.<YEAR>` | `NEW_YEAR_CAKE.515` |
 
-Multi-enchant books are not priced. Every bazaar product and auction item also has a `name`: Hypixel's
+Multi-enchant books and pets holding a Tier Boost are not priced: both are composite items whose price
+would distort the single item they'd be filed under. Every bazaar product and auction item also has a `name`: Hypixel's
 display name where its item list has one, otherwise one derived from the key.
 
 All auction prices are **per item**: a stack of 7 listed for 3.5M counts as 500K each.
