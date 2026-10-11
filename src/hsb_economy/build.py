@@ -16,6 +16,7 @@ import httpx
 from . import config, hypixel, state
 from .history import History
 from .market import summarize_auctions, summarize_bazaar
+from .names import display_name, resource_names
 from .sales import Sales
 
 log = logging.getLogger(__name__)
@@ -57,12 +58,15 @@ async def fetch_sales(client: httpx.AsyncClient, feed: SalesFeed | None, cursor:
     return SalesBatch([*responses, await hypixel.fetch_auctions_ended(client)], "direct", feed_cursor)
 
 
-async def fetch_all(feed: SalesFeed | None, cursor: int) -> tuple[dict, tuple[int, list[dict]], SalesBatch]:
+async def fetch_all(
+    feed: SalesFeed | None, cursor: int
+) -> tuple[dict, tuple[int, list[dict]], SalesBatch, dict]:
     async with hypixel.new_client() as client:
         return await asyncio.gather(
             hypixel.fetch_bazaar(client),
             hypixel.fetch_auction_snapshot(client),
             fetch_sales(client, feed, cursor),
+            hypixel.fetch_item_resource(client),
         )
 
 
@@ -71,18 +75,28 @@ def file_name(key: str) -> str:
     return key.replace(":", "-") + ".json"
 
 
-def trend(history: History, key: str, metric: str, now: int) -> dict:
+def trend(history: History, key: str, metric: str, now: int, current: float | None) -> dict:
     result = {}
     for label, ago in (("1d", config.DAY), ("7d", 7 * config.DAY)):
-        change = history.change(key, metric, now, ago)
+        change = history.change(key, metric, now, ago, current)
         result[f"{metric}_{label}"] = round(change, 4) if change is not None else None
     return result
+
+
+def update_last_seen(last_seen: dict[str, list], auctions: dict, now: int) -> None:
+    """Remember each listed item's lowest BIN as ``[at, lbin]``; forget items unlisted for too long."""
+    for key, item in auctions.items():
+        if item["lbin"] is not None:
+            last_seen[key] = [now, item["lbin"]]
+    for key in [key for key, (at, _) in last_seen.items() if at < now - config.LAST_SEEN_RETENTION]:
+        del last_seen[key]
 
 
 def build(out: Path, state_path: Path, public_url: str | None, feed: SalesFeed | None) -> None:
     current = state.load(state_path, public_url)
     cursor = current.get("feed_cursor", 0)
-    bazaar_raw, (auctions_updated, auctions_raw), batch = asyncio.run(fetch_all(feed, cursor))
+    bazaar_raw, (auctions_updated, auctions_raw), batch, item_resource = asyncio.run(fetch_all(feed, cursor))
+    names = resource_names(item_resource)
     sales_source = batch.source
     now = int(time.time())
 
@@ -99,9 +113,10 @@ def build(out: Path, state_path: Path, public_url: str | None, feed: SalesFeed |
         bazaar_history.record(product_id, "sell", now, product["sell"])
     bazaar_history.prune(now)
     for product_id, product in bazaar.items():
-        product["trend"] = trend(bazaar_history, product_id, "buy", now) | trend(
-            bazaar_history, product_id, "sell", now
+        product["trend"] = trend(bazaar_history, product_id, "buy", now, product["buy"]) | trend(
+            bazaar_history, product_id, "sell", now, product["sell"]
         )
+    bazaar = {key: {"name": display_name(key, names), **product} for key, product in bazaar.items()}
 
     auction_history = History(current["history"]["auctions"])
     auctions = summarize_auctions(auctions_raw)
@@ -109,11 +124,19 @@ def build(out: Path, state_path: Path, public_url: str | None, feed: SalesFeed |
         auction_history.record(key, "lbin", now, item["lbin"])
         auction_history.record(key, "listings", now, item["listings"])
     auction_history.prune(now)
-    for key in sales.samples.keys() - auctions.keys():
+    last_seen = current.setdefault("last_seen", {})
+    update_last_seen(last_seen, auctions, now)
+    # Unlisted items stay visible while they have recent sales or a remembered lowest BIN.
+    for key in (sales.samples.keys() | last_seen.keys()) - auctions.keys():
         auctions[key] = {"lbin": None, "lbin2": None, "listings": 0}
+    observed_day = sales.observed_seconds(now, config.DAY)
     for key, item in auctions.items():
-        item["trend"] = trend(auction_history, key, "lbin", now)
-        item["sales"] = sales.stats(key, now)
+        if item["lbin"] is None and key in last_seen:
+            at, lbin = last_seen[key]
+            item["last_seen"] = {"lbin": lbin, "at": at}
+        item["trend"] = trend(auction_history, key, "lbin", now, item["lbin"])
+        item["sales"] = sales.stats(key, now, observed_day)
+    auctions = {key: {"name": display_name(key, names), **item} for key, item in auctions.items()}
 
     prices = {key: item["lbin"] for key, item in auctions.items() if item["lbin"] is not None}
     for product_id, product in bazaar.items():
@@ -124,7 +147,6 @@ def build(out: Path, state_path: Path, public_url: str | None, feed: SalesFeed |
     current["history"] = {"bazaar": bazaar_history.data, "auctions": auction_history.data}
     raw_state = state.save(state_path, current)
 
-    observed = sales.observed_seconds(now, config.DAY)
     meta = {
         "generated_at": now,
         "sources": {
@@ -138,7 +160,7 @@ def build(out: Path, state_path: Path, public_url: str | None, feed: SalesFeed |
             "new_sales": new_sales,
         },
         "sales_source": sales_source,
-        "sales_coverage_1d": round(observed / config.DAY, 4),
+        "sales_coverage_1d": round(observed_day / config.DAY, 4),
     }
 
     root = out / config.API_VERSION

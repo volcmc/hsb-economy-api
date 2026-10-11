@@ -55,6 +55,15 @@ async def fetch_bazaar(client: httpx.AsyncClient) -> dict:
     return await get_json(client, config.BAZAAR_URL)
 
 
+async def fetch_item_resource(client: httpx.AsyncClient) -> dict:
+    """Hypixel's item metadata. Only used for display names, so failures degrade instead of failing."""
+    try:
+        return await get_json(client, config.ITEMS_URL)
+    except (HypixelError, httpx.HTTPError) as error:
+        log.warning("Item resource unavailable (%r); deriving names from keys", error)
+        return {}
+
+
 async def fetch_auctions_ended(client: httpx.AsyncClient) -> dict:
     return await get_json(client, config.AUCTIONS_ENDED_URL)
 

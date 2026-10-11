@@ -43,7 +43,7 @@ def test_stats_medians_and_volume_estimate():
     sales.windows = [NOW - i * 60 for i in range(60)][::-1]
     prices = [100, 200, 300, 400, 1_000_000]
     sales.samples["X"] = [[NOW - 60, p, None] for p in prices] + [[NOW - 3 * config.DAY, 5, None]]
-    stats = sales.stats("X", NOW)
+    stats = sales.stats("X", NOW, sales.observed_seconds(NOW, config.DAY))
     assert stats["count_1d"] == 5
     assert stats["median_1d"] == 300
     assert stats["count_7d"] == 6
@@ -52,13 +52,19 @@ def test_stats_medians_and_volume_estimate():
 
 def test_no_volume_estimate_from_too_little_coverage():
     sales = Sales({"windows": [NOW], "samples": {"X": [[NOW, 1, None]]}})
-    assert sales.stats("X", NOW)["est_volume_1d"] is None
+    assert sales.stats("X", NOW, sales.observed_seconds(NOW, config.DAY))["est_volume_1d"] is None
 
 
 def test_pet_level_sales_breakdown():
     sales = Sales()
     sales.add(response(NOW, sold("a", pet("BEE", "RARE", 100), 5), sold("b", pet("BEE", "RARE", 3), 1)))
-    assert sales.stats("PET.BEE.RARE", NOW)["levels"] == {"100": {"count_7d": 1, "median_7d": 5}}
+    assert sales.stats("PET.BEE.RARE", NOW, 60)["levels"] == {"100": {"count_7d": 1, "median_7d": 5}}
+
+
+def test_stack_sales_are_priced_per_item():
+    sales = Sales()
+    sales.add(response(NOW, sold("a", plain("KAT_FLOWER", count=4), 2_000_000)))
+    assert sales.samples["KAT_FLOWER"] == [[NOW, 500_000, None]]
 
 
 def test_prune_drops_expired_samples_and_windows():
