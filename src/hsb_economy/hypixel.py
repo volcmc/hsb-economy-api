@@ -18,7 +18,9 @@ class HypixelError(RuntimeError):
 
 def new_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(
-        timeout=config.REQUEST_TIMEOUT,
+        # Pages queue for the connection pool; waiting there is not a failed request, so only the
+        # request itself is timed.
+        timeout=httpx.Timeout(config.REQUEST_TIMEOUT, pool=None),
         headers={"User-Agent": "hsb-economy-api (+https://github.com/volcmc/hsb-economy-api)"},
         limits=httpx.Limits(max_connections=config.PAGE_CONCURRENCY),
     )
