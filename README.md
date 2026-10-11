@@ -1,14 +1,15 @@
 # HSB Economy API
 
-Static JSON with Hypixel SkyBlock auction and bazaar prices, rebuilt every ~10 minutes by GitHub Actions and
+Static JSON with Hypixel SkyBlock auction and bazaar prices, rebuilt hourly by GitHub Actions and
 served from GitHub Pages. There is no server: fetch the files directly.
 
 ```
 https://volcmc.github.io/hsb-economy-api/v1/<file>
 ```
 
-Responses are CORS-enabled and CDN-cached for up to 10 minutes. GitHub's scheduler is best-effort, so
-expect data to be 10–25 minutes old; check `meta.json` or each file's `updated_at` for the exact age.
+Responses are CORS-enabled and CDN-cached for up to 10 minutes. GitHub's scheduler is best-effort and can
+delay or skip runs, so data can be an hour old or more; check `meta.json` or each file's `updated_at` for
+the exact age.
 All timestamps are Unix seconds; all prices are coins.
 
 ## Endpoints
@@ -112,7 +113,7 @@ Bazaar history files have `buy` and `sell` instead of `lbin` and `listings`.
 `worker/` is a Cloudflare Worker that stores every `auctions_ended` response in D1 (kept 36 hours) and
 serves them to the pipeline behind a bearer token.
 
-`.github/workflows/update.yml` runs every 10 minutes:
+`.github/workflows/update.yml` runs hourly:
 
 1. Fetches the bazaar, every active auction page from a single Hypixel update (pages are refetched if
    Hypixel regenerates them mid-fetch), and all sales the Worker captured since the last run. If the

@@ -4,7 +4,7 @@ on:
   schedule:
     # Offset from the top of the hour, when GitHub's scheduler is most congested and drops runs.
     # Sales come from the Worker feed, so this cadence only affects how fresh prices are.
-    - cron: "2-59/10 * * * *"
+    - cron: "23 * * * *"
   workflow_dispatch:
 
 permissions:
