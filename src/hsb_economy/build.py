@@ -27,25 +27,37 @@ class SalesFeed:
     token: str
 
 
-async def fetch_sales(
-    client: httpx.AsyncClient, feed: SalesFeed | None, cursor: int
-) -> tuple[list[dict], str]:
-    """auctions_ended responses since ``cursor`` from the sales Worker, plus which source supplied them.
+@dataclass(frozen=True)
+class SalesBatch:
+    responses: list[dict]
+    # "feed" when the Worker supplied current data, otherwise "direct".
+    source: str
+    # Newest lastUpdated (ms) read from the feed, if any; only feed data may advance the cursor.
+    feed_cursor: int | None
 
-    If the feed is unavailable, one direct sample keeps sale stats moving; the feed retains 36 hours of
-    responses, so the next successful run backfills the gap.
+
+async def fetch_sales(client: httpx.AsyncClient, feed: SalesFeed | None, cursor: int) -> SalesBatch:
+    """auctions_ended responses since ``cursor`` from the sales Worker.
+
+    If the feed is unreachable or has nothing recent (e.g. its cron stopped), one direct sample keeps
+    sale stats moving; the Worker retains 36 hours of responses, so a later run backfills any gap.
     """
+    responses: list[dict] = []
     if feed:
         try:
-            return await hypixel.fetch_sales_feed(client, feed.url, feed.token, cursor), "feed"
+            responses = await hypixel.fetch_sales_feed(client, feed.url, feed.token, cursor)
         except (httpx.HTTPError, ValueError, KeyError) as error:
             log.error("Sales feed failed (%r); sampling auctions_ended directly instead", error)
-    return [await hypixel.fetch_auctions_ended(client)], "direct"
+        else:
+            latest = max((r["lastUpdated"] for r in responses), default=cursor)
+            if time.time() * 1000 - latest <= config.SALES_FEED_MAX_AGE_SECONDS * 1000:
+                return SalesBatch(responses, "feed", latest)
+            log.error("Sales feed has nothing recent; is the Worker cron running? Sampling directly too")
+    feed_cursor = max((r["lastUpdated"] for r in responses), default=None)
+    return SalesBatch([*responses, await hypixel.fetch_auctions_ended(client)], "direct", feed_cursor)
 
 
-async def fetch_all(
-    feed: SalesFeed | None, cursor: int
-) -> tuple[dict, tuple[int, list[dict]], tuple[list[dict], str]]:
+async def fetch_all(feed: SalesFeed | None, cursor: int) -> tuple[dict, tuple[int, list[dict]], SalesBatch]:
     async with hypixel.new_client() as client:
         return await asyncio.gather(
             hypixel.fetch_bazaar(client),
@@ -70,14 +82,15 @@ def trend(history: History, key: str, metric: str, now: int) -> dict:
 def build(out: Path, state_path: Path, public_url: str | None, feed: SalesFeed | None) -> None:
     current = state.load(state_path, public_url)
     cursor = current.get("feed_cursor", 0)
-    bazaar_raw, (auctions_updated, auctions_raw), (ended, sales_source) = asyncio.run(fetch_all(feed, cursor))
+    bazaar_raw, (auctions_updated, auctions_raw), batch = asyncio.run(fetch_all(feed, cursor))
+    sales_source = batch.source
     now = int(time.time())
 
     sales = Sales(current["sales"])
-    new_sales = sum(sales.add(response) for response in ended)
+    new_sales = sum(sales.add(response) for response in batch.responses)
     sales.prune(now)
-    if sales_source == "feed" and ended:
-        current["feed_cursor"] = max(response["lastUpdated"] for response in ended)
+    if batch.feed_cursor is not None:
+        current["feed_cursor"] = batch.feed_cursor
 
     bazaar_history = History(current["history"]["bazaar"])
     bazaar = summarize_bazaar(bazaar_raw["products"])

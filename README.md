@@ -89,7 +89,7 @@ Multi-enchant books are not priced.
 **About sale stats:** Hypixel's `auctions_ended` endpoint only exposes the last 60 seconds of sales, so a
 small Cloudflare Worker (`worker/`) captures it every minute and the pipeline processes every captured
 response. `sales_coverage_1d` in `meta.json` is the share of the last day actually covered (≈1.0 when the
-feed is healthy); `sales_source` is `feed`, or `direct` when the feed was unreachable and a single 60-second
+feed is healthy); `sales_source` is `feed`, or `direct` when the feed was unreachable or stale and a single 60-second
 sample was used instead. Only BIN sales are counted.
 
 ### History files
