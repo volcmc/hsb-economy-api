@@ -71,30 +71,6 @@ function formatTime(seconds, resolution) {
   return (resolution >= DAY ? dateFormat : dateTimeFormat).format(new Date(seconds * 1000));
 }
 
-/* ---------- item names ---------- */
-
-function titleCase(text) {
-  return text
-    .toLowerCase()
-    .split("_")
-    .filter(Boolean)
-    .map((word) => word[0].toUpperCase() + word.slice(1))
-    .join(" ");
-}
-
-function displayName(key) {
-  const parts = key.split(".");
-  if (parts[0] === "PET" && parts.length === 3) return `${titleCase(parts[1])} (${titleCase(parts[2])} pet)`;
-  if ((parts[0] === "RUNE" || parts[0] === "UNIQUE_RUNE") && parts.length === 3) {
-    return `${titleCase(parts[1])} ${parts[0] === "RUNE" ? "Rune" : "Unique Rune"} ${parts[2]}`;
-  }
-  if (parts[0] === "POTION" && parts.length === 3) return `${titleCase(parts[1])} Potion ${parts[2]}`;
-  if (parts[0] === "NEW_YEAR_CAKE" && parts.length === 2) return `New Year Cake (Year ${parts[1]})`;
-  const enchantment = /^ENCHANTMENT_(.+)_(\d+)$/.exec(key);
-  if (enchantment) return `${titleCase(enchantment[1])} ${enchantment[2]} (Enchantment)`;
-  return titleCase(key);
-}
-
 /* ---------- data ---------- */
 
 async function getJSON(path) {
@@ -108,21 +84,20 @@ function buildIndex() {
   for (const [key, product] of Object.entries(state.bazaar)) {
     const price = product.buy ?? product.sell;
     const dailyVolume = (product.buy_moving_week + product.sell_moving_week) / 7;
-    items.push(indexEntry("bazaar", key, price, dailyVolume * (price ?? 0)));
+    items.push(indexEntry("bazaar", key, product.name, price, dailyVolume * (price ?? 0)));
   }
   for (const [key, item] of Object.entries(state.auctions)) {
     const sales = item.sales;
     const perDay = sales ? (sales.est_volume_1d ?? sales.count_7d / 7) : 0;
     const salePrice = sales?.median_7d ?? item.lbin ?? 0;
     // Listings break ties for items with no recorded sales.
-    items.push(indexEntry("auctions", key, item.lbin, perDay * salePrice + item.listings));
+    items.push(indexEntry("auctions", key, item.name, item.lbin ?? item.last_seen?.lbin, perDay * salePrice + item.listings));
   }
   items.sort((a, b) => b.activity - a.activity);
   state.items = items;
 }
 
-function indexEntry(source, key, price, activity) {
-  const name = displayName(key);
+function indexEntry(source, key, name = key, price, activity) {
   return { source, key, name, price, activity, haystack: `${name} ${key}`.toLowerCase().replaceAll("_", " ") };
 }
 
@@ -306,8 +281,11 @@ function bazaarTiles(product) {
 function auctionTiles(item) {
   const trend = item.trend ?? {};
   const sales = item.sales;
+  const lowest = item.lbin === null && item.last_seen
+    ? tile("Last lowest BIN", coins(item.last_seen.lbin), `None listed now · seen ${ago(Date.now() / 1000 - item.last_seen.at)}`, exact(item.last_seen.lbin))
+    : tile("Lowest BIN", coins(item.lbin), trendNote(trend.lbin_1d, trend.lbin_7d), exact(item.lbin));
   const tiles = [
-    tile("Lowest BIN", coins(item.lbin), trendNote(trend.lbin_1d, trend.lbin_7d), exact(item.lbin)),
+    lowest,
     tile("Second lowest BIN", coins(item.lbin2), null, exact(item.lbin2)),
     tile("Active listings", count(item.listings)),
   ];
@@ -368,14 +346,14 @@ async function showItem(source, key) {
   state.current = { source, key, data };
   $("item").hidden = false;
   $("item-source").textContent = source === "bazaar" ? "Bazaar product" : "Auction house item";
-  $("item-name").textContent = displayName(key);
+  $("item-name").textContent = data.name ?? key;
   $("item-key").textContent = key;
   $("copy-key").textContent = "Copy key";
   $("item-tiles").replaceChildren(...(source === "bazaar" ? bazaarTiles(data) : auctionTiles(data)));
   if (source === "auctions") petLevels(data);
   else $("item-levels").replaceChildren();
   $("chart-title").textContent = source === "bazaar" ? "Instant buy and sell history" : "Lowest BIN history";
-  document.title = `${displayName(key)} · HSB Economy API`;
+  document.title = `${data.name ?? key} · HSB Economy API`;
   await renderHistory();
 }
 
