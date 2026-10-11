@@ -1,6 +1,6 @@
 # HSB Economy API
 
-Static JSON with Hypixel SkyBlock auction and bazaar prices, rebuilt every ~5 minutes by GitHub Actions and
+Static JSON with Hypixel SkyBlock auction and bazaar prices, rebuilt every ~10 minutes by GitHub Actions and
 served from GitHub Pages. There is no server: fetch the files directly.
 
 ```
@@ -8,7 +8,7 @@ https://volcmc.github.io/hsb-economy-api/v1/<file>
 ```
 
 Responses are CORS-enabled and CDN-cached for up to 10 minutes. GitHub's scheduler is best-effort, so
-expect data to be 5–20 minutes old; check `meta.json` or each file's `updated_at` for the exact age.
+expect data to be 10–25 minutes old; check `meta.json` or each file's `updated_at` for the exact age.
 All timestamps are Unix seconds; all prices are coins.
 
 ## Endpoints
@@ -17,10 +17,10 @@ All timestamps are Unix seconds; all prices are coins.
 | --- | --- |
 | `v1/prices.json` | Flat `{key: price}`: cheapest current way to buy each item (bazaar instant buy or lowest BIN). |
 | `v1/bazaar.json` | Every bazaar product with order-book prices, volumes and trends. |
-| `v1/auctions.json` | Every item on the auction house with lowest BIN, listings, sampled sale stats and trends. |
+| `v1/auctions.json` | Every item on the auction house with lowest BIN, listings, sale stats and trends. |
 | `v1/history/bazaar/<id>.json` | Hourly (7 days) and daily (1 year) instant buy/sell history. |
 | `v1/history/auctions/<key>.json` | Hourly and daily lowest BIN and listing-count history. |
-| `v1/meta.json` | Build time, source timestamps, counts and sales coverage. |
+| `v1/meta.json` | Build time, source timestamps, counts, sales source and coverage. |
 
 In history file names, `:` is replaced with `-` (e.g. `INK_SACK:3` → `INK_SACK-3.json`).
 
@@ -75,10 +75,10 @@ Multi-enchant books are not priced.
       "listings": 35,           // active BIN listings
       "levels": { "1": 448999999, "100": 479899999 },  // pets only: lowest BIN at level 1/100/200
       "trend": { "lbin_1d": -0.02, "lbin_7d": 0.05 },
-      "sales": {                // null if no sales sampled in the last 7 days
+      "sales": {                // null if no sales in the last 7 days
         "count_1d": 4, "median_1d": 452000000,
         "count_7d": 31, "median_7d": 455000000, "p25_7d": 449000000, "p75_7d": 462000000,
-        "est_volume_1d": 19.8,  // sampled count scaled by coverage; null until enough coverage
+        "est_volume_1d": 19.8,  // count_1d scaled up for any coverage gaps; null below 1 hour of coverage
         "levels": { "100": { "count_7d": 12, "median_7d": 481000000 } }
       }
     }
@@ -86,10 +86,11 @@ Multi-enchant books are not priced.
 }
 ```
 
-**About sale stats:** Hypixel's `auctions_ended` endpoint only exposes the last 60 seconds of sales, so each
-run sees a sample (about 20% of sales at a 5-minute cadence; see `sales_coverage_1d` in `meta.json`).
-Medians and percentiles from that sample are reliable for anything that sells regularly; `est_volume_1d`
-is an estimate. Only BIN sales are counted.
+**About sale stats:** Hypixel's `auctions_ended` endpoint only exposes the last 60 seconds of sales, so a
+small Cloudflare Worker (`worker/`) captures it every minute and the pipeline processes every captured
+response. `sales_coverage_1d` in `meta.json` is the share of the last day actually covered (≈1.0 when the
+feed is healthy); `sales_source` is `feed`, or `direct` when the feed was unreachable and a single 60-second
+sample was used instead. Only BIN sales are counted.
 
 ### History files
 
@@ -108,12 +109,16 @@ Bazaar history files have `buy` and `sell` instead of `lbin` and `listings`.
 
 ## How it works
 
-`.github/workflows/update.yml` runs every 5 minutes:
+`worker/` is a Cloudflare Worker that stores every `auctions_ended` response in D1 (kept 36 hours) and
+serves them to the pipeline behind a bearer token.
 
-1. Fetches the bazaar, `auctions_ended`, and every active auction page from a single Hypixel update (pages
-   are refetched if Hypixel regenerates them mid-fetch).
+`.github/workflows/update.yml` runs every 10 minutes:
+
+1. Fetches the bazaar, every active auction page from a single Hypixel update (pages are refetched if
+   Hypixel regenerates them mid-fetch), and all sales the Worker captured since the last run. If the
+   Worker is unreachable it samples `auctions_ended` directly; the Worker's backlog fills the gap next run.
 2. Decodes each BIN listing's NBT to its item key and computes lowest BINs.
-3. Updates pipeline state (sampled sales and price history), kept in the Actions cache. If the cache is
+3. Updates pipeline state (sales, feed cursor and price history), kept in the Actions cache. If the cache is
    ever lost, the copy published at `v1/state.json.gz` is used, so history survives.
 4. Writes the JSON files and deploys them to GitHub Pages.
 
@@ -130,6 +135,24 @@ pytest
 ruff check . && ruff format --check .
 python -m hsb_economy --out site --state state/state.json.gz   # live build into ./site
 ```
+
+Set `HSB_SALES_URL` and `HSB_SALES_TOKEN` to build from the sales feed; without them sales are sampled directly.
+
+### Sales feed Worker
+
+Requires Node 22+ and a Cloudflare account (the free plan is enough).
+
+```sh
+cd worker
+npm ci
+npm run check                    # generated types are current + type-check
+npm run dev                      # local Worker with local D1; trigger the cron at /__scheduled
+npm run deploy                   # apply D1 migrations, then deploy
+```
+
+The Worker needs a `SALES_TOKEN` secret (`npx wrangler secret put SALES_TOKEN`). The update workflow reads the
+same value from the `HSB_SALES_TOKEN` repository secret and the Worker URL from the `HSB_SALES_URL`
+repository variable.
 
 ## Previous versions
 
