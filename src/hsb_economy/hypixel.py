@@ -57,6 +57,23 @@ async def fetch_auctions_ended(client: httpx.AsyncClient) -> dict:
     return await get_json(client, config.AUCTIONS_ENDED_URL)
 
 
+async def fetch_sales_feed(client: httpx.AsyncClient, url: str, token: str, after: int) -> list[dict]:
+    """Every auctions_ended response the sales Worker captured with lastUpdated > ``after`` (ms)."""
+    responses: list[dict] = []
+    while True:
+        response = await client.get(
+            f"{url.rstrip('/')}/ended",
+            params={"after": after, "limit": config.SALES_FEED_PAGE_SIZE},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        response.raise_for_status()
+        page = response.json()
+        responses.extend(page["responses"])
+        if not page["more"]:
+            return responses
+        after = page["responses"][-1]["lastUpdated"]
+
+
 async def fetch_auction_snapshot(client: httpx.AsyncClient) -> tuple[int, list[dict]]:
     """Fetch every active-auction page from a single Hypixel update.
 

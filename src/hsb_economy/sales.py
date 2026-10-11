@@ -1,10 +1,12 @@
-"""Rolling record of BIN sales sampled from ``auctions_ended``.
+"""Rolling record of BIN sales from ``auctions_ended`` responses.
 
-That endpoint only exposes the last 60 seconds, so a scheduled run sees a fraction of all sales.
-Prices are still an unbiased sample, and ``coverage`` (seconds of sales actually observed) lets us
-scale sample counts up to an estimated daily volume.
+Each response covers the 60 seconds before its ``lastUpdated``. The sales feed Worker captures every
+response, so normally coverage is complete; ``windows`` records which responses were processed so
+gaps (feed outages, direct-fetch fallback) are measured and sample counts can be scaled to a daily
+volume estimate.
 """
 
+import bisect
 import logging
 import statistics
 from collections import defaultdict
@@ -20,22 +22,27 @@ class Sales:
         data = data or {}
         # key -> [[timestamp, price, pet_level | None], ...]
         self.samples: dict[str, list[list]] = defaultdict(list, data.get("samples", {}))
-        self.seen: list[str] = data.get("seen", [])
-        # [[run_timestamp, seconds_observed], ...]
-        self.coverage: list[list[int]] = data.get("coverage", [])
+        # Insertion-ordered so the oldest ids can be dropped; responses overlap at their edges.
+        self.seen: dict[str, None] = dict.fromkeys(data.get("seen", []))
+        # Sorted lastUpdated (seconds) of every processed response.
+        self.windows: list[int] = data.get("windows", [])
 
     def to_dict(self) -> dict:
-        return {"samples": dict(self.samples), "seen": self.seen, "coverage": self.coverage}
+        return {"samples": dict(self.samples), "seen": list(self.seen), "windows": self.windows}
 
-    def add(self, ended: dict, now: int) -> int:
-        """Record new BIN sales from an ``auctions_ended`` response; returns how many were new."""
-        seen = set(self.seen)
+    def add(self, ended: dict) -> int:
+        """Record BIN sales from one ``auctions_ended`` response; returns how many were new."""
+        window = ended["lastUpdated"] // 1000
+        index = bisect.bisect_left(self.windows, window)
+        if index < len(self.windows) and self.windows[index] == window:
+            return 0
+        self.windows.insert(index, window)
+
         added = 0
         for auction in ended["auctions"]:
-            if not auction["bin"] or auction["auction_id"] in seen:
+            if not auction["bin"] or auction["auction_id"] in self.seen:
                 continue
-            seen.add(auction["auction_id"])
-            self.seen.append(auction["auction_id"])
+            self.seen[auction["auction_id"]] = None
             try:
                 item = parse_item(auction["item_bytes"])
             except Exception:
@@ -45,12 +52,8 @@ class Sales:
                 continue
             self.samples[item.key].append([auction["timestamp"] // 1000, auction["price"], item.pet_level])
             added += 1
-        del self.seen[: -config.SEEN_SALE_IDS_LIMIT]
-
-        observed = config.ENDED_WINDOW_SECONDS
-        if self.coverage:
-            observed = min(observed, now - self.coverage[-1][0])
-        self.coverage.append([now, max(observed, 0)])
+        for stale in list(self.seen)[: max(len(self.seen) - config.SEEN_SALE_IDS_LIMIT, 0)]:
+            del self.seen[stale]
         return added
 
     def prune(self, now: int) -> None:
@@ -61,10 +64,18 @@ class Sales:
                 self.samples[key] = kept
             else:
                 del self.samples[key]
-        self.coverage = [c for c in self.coverage if c[0] >= cutoff]
+        del self.windows[: bisect.bisect_left(self.windows, cutoff)]
 
     def observed_seconds(self, now: int, window: int) -> int:
-        return sum(seconds for t, seconds in self.coverage if t >= now - window)
+        """Seconds of sales covered by processed responses ending within the last ``window`` seconds."""
+        observed = 0
+        previous = None
+        for t in self.windows:
+            if t >= now - window:
+                gap = config.ENDED_WINDOW_SECONDS if previous is None else t - previous
+                observed += min(gap, config.ENDED_WINDOW_SECONDS)
+            previous = t
+        return observed
 
     def stats(self, key: str, now: int) -> dict | None:
         samples = self.samples.get(key)

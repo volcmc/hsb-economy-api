@@ -1,4 +1,4 @@
-"""Pipeline state carried between runs: sampled sales and price history.
+"""Pipeline state carried between runs: recorded sales, sales feed cursor and price history.
 
 The workflow restores it from the Actions cache. If the cache was evicted, the copy published alongside
 the API is used instead so history survives; only a genuine 404 (first ever run) starts from scratch.
