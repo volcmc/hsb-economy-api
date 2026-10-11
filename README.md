@@ -12,6 +12,8 @@ delay or skip runs, so data can be an hour old or more; check `meta.json` or eac
 the exact age.
 All timestamps are Unix seconds; all prices are coins.
 
+Browse prices and history in the explorer at **https://volcmc.github.io/hsb-economy-api/**.
+
 ## Endpoints
 
 | File | Contents |
@@ -121,9 +123,19 @@ serves them to the pipeline behind a bearer token.
 2. Decodes each BIN listing's NBT to its item key and computes lowest BINs.
 3. Updates pipeline state (sales, feed cursor and price history), kept in the Actions cache. If the cache is
    ever lost, the copy published at `v1/state.json.gz` is used, so history survives.
-4. Writes the JSON files and deploys them to GitHub Pages.
+4. Writes the JSON files, adds the explorer page from `web/`, and deploys both to GitHub Pages.
 
 A run either publishes everything or nothing: if any source fails, the previous deployment stays live.
+
+## Repository layout
+
+| Path | What it is |
+| --- | --- |
+| `src/hsb_economy/` | Python pipeline that builds the JSON API |
+| `tests/` | Pipeline tests (pytest) |
+| `worker/` | Cloudflare Worker that records every `auctions_ended` response |
+| `web/` | Static price explorer served at the site root (no build step) |
+| `.github/workflows/` | `update.yml` builds and deploys hourly; `ci.yml` checks everything on PRs |
 
 ## Development
 
@@ -138,6 +150,17 @@ python -m hsb_economy --out site --state state/state.json.gz   # live build into
 ```
 
 Set `HSB_SALES_URL` and `HSB_SALES_TOKEN` to build from the sales feed; without them sales are sampled directly.
+
+### Explorer page
+
+`web/` is plain HTML, CSS and JavaScript with no dependencies. It reads the JSON from `v1/` next to it, so
+preview it on top of a local build:
+
+```sh
+python -m hsb_economy --out site --state state/state.json.gz
+cp -r web/. site/
+python -m http.server -d site 8000   # then open http://localhost:8000
+```
 
 ### Sales feed Worker
 
