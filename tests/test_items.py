@@ -1,5 +1,5 @@
 from conftest import item_bytes, pet, plain, rune
-from nbtlib import Compound, Int, String
+from nbtlib import Compound, Int, List, String
 
 from hsb_economy.items import Item, parse_item
 
@@ -15,6 +15,32 @@ def test_pet_key_includes_type_tier_and_level():
 def test_tier_boosted_pets_are_unpriced():
     assert parse_item(pet("ENDER_DRAGON", "EPIC", 100, "PET_ITEM_TIER_BOOST")) is None
     assert parse_item(pet("BEE", "RARE", 1, "PET_ITEM_EXP_SHARE")).key == "PET.BEE.RARE"
+
+
+def test_common_upgrades_make_a_copy_not_plain():
+    assert parse_item(plain("HYPERION")).plain
+    for extra in (
+        {"upgrade_level": Int(5)},
+        {"rarity_upgrades": Int(1)},
+        {"hot_potato_count": Int(10)},
+        {"art_of_war_count": Int(1)},
+        {"dye_item": String("DYE_PURE_BLACK")},
+        {"ability_scroll": List[String]([String("IMPLOSION_SCROLL")])},
+        {"gems": Compound({"COMBAT_0": String("PERFECT")})},
+    ):
+        assert not parse_item(item_bytes({"id": String("HYPERION"), **extra})).plain, extra
+    unlocked_only = {"gems": Compound({"unlocked_slots": List[String]([String("COMBAT_0")])})}
+    assert parse_item(item_bytes({"id": String("HYPERION"), **unlocked_only})).plain
+    enchanted = {"enchantments": Compound({"sharpness": Int(5)}), "modifier": String("fabled")}
+    assert parse_item(item_bytes({"id": String("HYPERION"), **enchanted})).plain
+
+
+def test_pet_skin_makes_a_pet_not_plain():
+    skinned = item_bytes(
+        {"id": String("PET"), "petInfo": String('{"type":"BEE","tier":"RARE","skin":"BEE_RGBEE"}')}
+    )
+    assert not parse_item(skinned).plain
+    assert parse_item(pet("BEE", "RARE", 1)).plain
 
 
 def test_stack_size_is_read():

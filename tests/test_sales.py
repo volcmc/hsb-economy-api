@@ -20,7 +20,7 @@ def test_records_bin_sales_once_across_overlapping_responses():
     assert sales.add(first) == 1
     assert sales.add(first) == 0
     assert sales.add(response(NOW + 60, sold("a", plain("X"), 10), sold("c", plain("X"), 12))) == 1
-    assert sales.samples["X"] == [[NOW, 10, None], [NOW, 12, None]]
+    assert sales.samples["X"] == [[NOW, 10, None, True], [NOW, 12, None, True]]
 
 
 def test_coverage_counts_gaps_between_responses():
@@ -64,7 +64,15 @@ def test_pet_level_sales_breakdown():
 def test_stack_sales_are_priced_per_item():
     sales = Sales()
     sales.add(response(NOW, sold("a", plain("KAT_FLOWER", count=4), 2_000_000)))
-    assert sales.samples["KAT_FLOWER"] == [[NOW, 500_000, None]]
+    assert sales.samples["KAT_FLOWER"] == [[NOW, 500_000, None, True]]
+
+
+def test_plain_sale_stats_exclude_upgraded_and_legacy_samples():
+    sales = Sales({"samples": {"X": [[NOW, 1, None], [NOW, 100, None, True], [NOW, 900, None, False]]}})
+    assert sales.has_upgraded("X")
+    assert sales.plain_stats("X", NOW) == {"count_1d": 1, "median_1d": 100, "count_7d": 1, "median_7d": 100}
+    assert not Sales({"samples": {"Y": [[NOW, 1, None]]}}).has_upgraded("Y")
+    assert Sales().plain_stats("Z", NOW) is None
 
 
 def test_prune_drops_expired_samples_and_windows():

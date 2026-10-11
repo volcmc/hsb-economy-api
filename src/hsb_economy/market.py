@@ -39,9 +39,12 @@ def unit_price(total: float, count: int) -> float:
 def summarize_auctions(auctions: list[dict]) -> dict:
     """Per-item lowest BIN, second-lowest BIN and listing count per key, plus per-level lowest BIN for pets.
 
-    Prices are per item: a stack listed at 15 for 13M counts as 866,666.67 each.
+    Prices are per item: a stack listed at 15 for 13M counts as 866,666.67 each. Each entry also has a
+    ``plain`` lowest BIN and listing count over copies without common upgrades, and a private
+    ``_upgraded`` flag saying whether any listed copy had one.
     """
     prices: dict[str, list[float]] = defaultdict(list)
+    plain_prices: dict[str, list[float]] = defaultdict(list)
     pet_levels: dict[str, dict[int, float]] = defaultdict(dict)
     skipped = 0
     for auction in auctions:
@@ -57,6 +60,8 @@ def summarize_auctions(auctions: list[dict]) -> dict:
             continue
         price = unit_price(auction["starting_bid"], item.count)
         prices[item.key].append(price)
+        if item.plain:
+            plain_prices[item.key].append(price)
         if item.pet_level in config.PET_LEVEL_BUCKETS:
             levels = pet_levels[item.key]
             levels[item.pet_level] = min(price, levels.get(item.pet_level, price))
@@ -66,7 +71,14 @@ def summarize_auctions(auctions: list[dict]) -> dict:
     result = {}
     for key, values in prices.items():
         lowest = heapq.nsmallest(2, values)
-        entry = {"lbin": lowest[0], "lbin2": lowest[1] if len(lowest) > 1 else None, "listings": len(values)}
+        plain = plain_prices.get(key, [])
+        entry = {
+            "lbin": lowest[0],
+            "lbin2": lowest[1] if len(lowest) > 1 else None,
+            "listings": len(values),
+            "plain": {"lbin": min(plain, default=None), "listings": len(plain)},
+            "_upgraded": len(plain) < len(values),
+        }
         if key in pet_levels:
             entry["levels"] = {str(level): price for level, price in sorted(pet_levels[key].items())}
         result[key] = entry

@@ -1,4 +1,5 @@
-from conftest import pet, plain
+from conftest import item_bytes, pet, plain
+from nbtlib import Int, String
 
 from hsb_economy.market import summarize_auctions, summarize_bazaar
 
@@ -16,14 +17,30 @@ def test_lowest_bins_and_listing_count():
             auction(plain("HYPERION"), 1, bin_=False),
         ]
     )
-    assert result == {"HYPERION": {"lbin": 300, "lbin2": 400, "listings": 3}}
+    assert result == {
+        "HYPERION": {
+            "lbin": 300,
+            "lbin2": 400,
+            "listings": 3,
+            "plain": {"lbin": 300, "listings": 3},
+            "_upgraded": False,
+        }
+    }
 
 
 def test_stacks_are_priced_per_item():
     result = summarize_auctions(
         [auction(plain("KAT_FLOWER", count=7), 3_500_000), auction(plain("KAT_FLOWER"), 600_000)]
     )
-    assert result["KAT_FLOWER"] == {"lbin": 500_000, "lbin2": 600_000, "listings": 2}
+    assert (result["KAT_FLOWER"]["lbin"], result["KAT_FLOWER"]["lbin2"]) == (500_000, 600_000)
+
+
+def test_plain_copies_are_tracked_separately():
+    starred = item_bytes({"id": String("HYPERION"), "upgrade_level": Int(5)})
+    result = summarize_auctions([auction(starred, 400), auction(plain("HYPERION"), 500)])["HYPERION"]
+    assert result["lbin"] == 400
+    assert result["plain"] == {"lbin": 500, "listings": 1}
+    assert result["_upgraded"] is True
 
 
 def test_pet_level_buckets():
