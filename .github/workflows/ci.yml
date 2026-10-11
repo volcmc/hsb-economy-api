@@ -24,3 +24,21 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest
+
+  worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - run: npm ci
+      - run: npm run check
+      - run: npx wrangler deploy --dry-run

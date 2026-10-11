@@ -15,6 +15,10 @@ SNAPSHOT_ATTEMPTS = 3
 
 # auctions_ended only covers the most recent 60 seconds of sales.
 ENDED_WINDOW_SECONDS = 60
+# Must not exceed MAX_PAGE_SIZE in worker/src/index.ts.
+SALES_FEED_PAGE_SIZE = 60
+# The Worker captures every minute, so a newest response older than this means its cron has stopped.
+SALES_FEED_MAX_AGE_SECONDS = 300
 # Below this much observed sales time in a day, scaling sample counts up to a daily volume is noise.
 MIN_OBSERVED_SECONDS_FOR_VOLUME = 3_600
 

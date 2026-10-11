@@ -8,7 +8,10 @@ import asyncio
 import json
 import logging
 import time
+from dataclasses import dataclass
 from pathlib import Path
+
+import httpx
 
 from . import config, hypixel, state
 from .history import History
@@ -18,12 +21,48 @@ from .sales import Sales
 log = logging.getLogger(__name__)
 
 
-async def fetch_all() -> tuple[dict, tuple[int, list[dict]], dict]:
+@dataclass(frozen=True)
+class SalesFeed:
+    url: str
+    token: str
+
+
+@dataclass(frozen=True)
+class SalesBatch:
+    responses: list[dict]
+    # "feed" when the Worker supplied current data, otherwise "direct".
+    source: str
+    # Newest lastUpdated (ms) read from the feed, if any; only feed data may advance the cursor.
+    feed_cursor: int | None
+
+
+async def fetch_sales(client: httpx.AsyncClient, feed: SalesFeed | None, cursor: int) -> SalesBatch:
+    """auctions_ended responses since ``cursor`` from the sales Worker.
+
+    If the feed is unreachable or has nothing recent (e.g. its cron stopped), one direct sample keeps
+    sale stats moving; the Worker retains 36 hours of responses, so a later run backfills any gap.
+    """
+    responses: list[dict] = []
+    if feed:
+        try:
+            responses = await hypixel.fetch_sales_feed(client, feed.url, feed.token, cursor)
+        except (httpx.HTTPError, ValueError, KeyError) as error:
+            log.error("Sales feed failed (%r); sampling auctions_ended directly instead", error)
+        else:
+            latest = max((r["lastUpdated"] for r in responses), default=cursor)
+            if time.time() * 1000 - latest <= config.SALES_FEED_MAX_AGE_SECONDS * 1000:
+                return SalesBatch(responses, "feed", latest)
+            log.error("Sales feed has nothing recent; is the Worker cron running? Sampling directly too")
+    feed_cursor = max((r["lastUpdated"] for r in responses), default=None)
+    return SalesBatch([*responses, await hypixel.fetch_auctions_ended(client)], "direct", feed_cursor)
+
+
+async def fetch_all(feed: SalesFeed | None, cursor: int) -> tuple[dict, tuple[int, list[dict]], SalesBatch]:
     async with hypixel.new_client() as client:
         return await asyncio.gather(
             hypixel.fetch_bazaar(client),
             hypixel.fetch_auction_snapshot(client),
-            hypixel.fetch_auctions_ended(client),
+            fetch_sales(client, feed, cursor),
         )
 
 
@@ -40,14 +79,18 @@ def trend(history: History, key: str, metric: str, now: int) -> dict:
     return result
 
 
-def build(out: Path, state_path: Path, public_url: str | None) -> None:
+def build(out: Path, state_path: Path, public_url: str | None, feed: SalesFeed | None) -> None:
     current = state.load(state_path, public_url)
-    bazaar_raw, (auctions_updated, auctions_raw), ended = asyncio.run(fetch_all())
+    cursor = current.get("feed_cursor", 0)
+    bazaar_raw, (auctions_updated, auctions_raw), batch = asyncio.run(fetch_all(feed, cursor))
+    sales_source = batch.source
     now = int(time.time())
 
     sales = Sales(current["sales"])
-    new_sales = sales.add(ended, now)
+    new_sales = sum(sales.add(response) for response in batch.responses)
     sales.prune(now)
+    if batch.feed_cursor is not None:
+        current["feed_cursor"] = batch.feed_cursor
 
     bazaar_history = History(current["history"]["bazaar"])
     bazaar = summarize_bazaar(bazaar_raw["products"])
@@ -92,8 +135,9 @@ def build(out: Path, state_path: Path, public_url: str | None) -> None:
             "bazaar_products": len(bazaar),
             "auction_items": len(auctions),
             "active_auctions": len(auctions_raw),
-            "new_sales_sampled": new_sales,
+            "new_sales": new_sales,
         },
+        "sales_source": sales_source,
         "sales_coverage_1d": round(observed / config.DAY, 4),
     }
 
@@ -109,10 +153,11 @@ def build(out: Path, state_path: Path, public_url: str | None) -> None:
             write_json(root / "history" / kind / file_name(key), {"key": key, **history.export(key)})
     (root / state.STATE_FILE).write_bytes(raw_state)
     log.info(
-        "Built %d bazaar products, %d auction items, %d new sales sampled",
+        "Built %d bazaar products, %d auction items, %d new sales (%s)",
         len(bazaar),
         len(auctions),
         new_sales,
+        sales_source,
     )
 
 
