@@ -33,13 +33,16 @@ Keys are Hypixel item ids, except where one id covers items with very different 
 
 | Item | Key | Example |
 | --- | --- | --- |
-| Pets | `PET.<TYPE>.<TIER>` | `PET.ENDER_DRAGON.LEGENDARY` |
+| Pets | `PET.<TYPE>.<TIER>` (a held Tier Boost counts as the next rarity) | `PET.ENDER_DRAGON.LEGENDARY` |
 | Runes | `RUNE.<TYPE>.<LEVEL>`, `UNIQUE_RUNE.<TYPE>.<LEVEL>` | `RUNE.MUSIC.3` |
 | Single-enchant books | `ENCHANTMENT_<NAME>_<LEVEL>` (same as the bazaar id) | `ENCHANTMENT_ULTIMATE_WISE_5` |
 | Potions | `POTION.<EFFECT>.<LEVEL>` | `POTION.ABSORPTION.5` |
 | New Year Cakes | `NEW_YEAR_CAKE.<YEAR>` | `NEW_YEAR_CAKE.515` |
 
-Multi-enchant books are not priced.
+Multi-enchant books are not priced. Every bazaar product and auction item also has a `name`: Hypixel's
+display name where its item list has one, otherwise one derived from the key.
+
+All auction prices are **per item**: a stack of 7 listed for 3.5M counts as 500K each.
 
 ## Schemas
 
@@ -50,6 +53,7 @@ Multi-enchant books are not priced.
   "updated_at": 1791701442,
   "products": {
     "ENCHANTED_DIAMOND": {
+      "name": "Enchanted Diamond",
       "buy": 1317.6,          // instant buy: cheapest sell offer
       "sell": 1250.2,         // instant sell: highest buy order
       "buy_avg": 1326.02,     // Hypixel quick_status averages over the top of each book
@@ -60,7 +64,7 @@ Multi-enchant books are not priced.
       "sell_moving_week": 20779766,
       "buy_orders": 400,
       "sell_orders": 101,
-      "trend": { "buy_1d": 0.012, "buy_7d": -0.03, "sell_1d": 0.01, "sell_7d": null }  // relative change
+      "trend": { "buy_1d": 0.012, "buy_7d": -0.03, "sell_1d": 0.01, "sell_7d": null }  // relative change; null without enough history
     }
   }
 }
@@ -73,11 +77,13 @@ Multi-enchant books are not priced.
   "updated_at": 1791701406,
   "items": {
     "PET.ENDER_DRAGON.LEGENDARY": {
+      "name": "Ender Dragon (Legendary pet)",
       "lbin": 448999999,        // lowest BIN right now (null if none listed)
       "lbin2": 449000000,       // second lowest, a sanity check against a single odd listing
       "listings": 35,           // active BIN listings
       "levels": { "1": 448999999, "100": 479899999 },  // pets only: lowest BIN at level 1/100/200
-      "trend": { "lbin_1d": -0.02, "lbin_7d": 0.05 },
+      "trend": { "lbin_1d": -0.02, "lbin_7d": 0.05 },  // null when nothing is listed now
+      "last_seen": { "lbin": 451000000, "at": 1791690000 },  // only when lbin is null: last lowest BIN, up to 30 days
       "sales": {                // null if no sales in the last 7 days
         "count_1d": 4, "median_1d": 452000000,
         "count_7d": 31, "median_7d": 455000000, "p25_7d": 449000000, "p75_7d": 462000000,
@@ -94,6 +100,14 @@ small Cloudflare Worker (`worker/`) captures it every minute and the pipeline pr
 response. `sales_coverage_1d` in `meta.json` is the share of the last day actually covered (≈1.0 when the
 feed is healthy); `sales_source` is `feed`, or `direct` when the feed was unreachable or stale and a single 60-second
 sample was used instead. Only BIN sales are counted.
+
+**What sale stats measure:** sales are grouped by the same key as listings, so they include upgraded copies
+(stars, enchantments, gemstones, recombobulated, pet skins). For gear that's commonly upgraded, the sale
+median can sit well above `lbin`. Use `lbin` (or `p25_7d`) for the price of a plain copy, and the median
+for what that item typically sells for.
+
+Items that drop off the auction house stay in `auctions.json` while they have sales from the last 7 days or
+a `last_seen` lowest BIN from the last 30 days.
 
 ### History files
 

@@ -12,6 +12,19 @@ def test_pet_key_includes_type_tier_and_level():
     assert parse_item(pet("ENDER_DRAGON", "LEGENDARY", 100)) == Item("PET.ENDER_DRAGON.LEGENDARY", 100)
 
 
+def test_tier_boost_files_pet_under_boosted_rarity():
+    assert (
+        parse_item(pet("ENDER_DRAGON", "EPIC", 100, "PET_ITEM_TIER_BOOST")).key
+        == "PET.ENDER_DRAGON.LEGENDARY"
+    )
+    assert parse_item(pet("BEE", "MYTHIC", 1, "PET_ITEM_TIER_BOOST")).key == "PET.BEE.MYTHIC"
+    assert parse_item(pet("BEE", "RARE", 1, "PET_ITEM_EXP_SHARE")).key == "PET.BEE.RARE"
+
+
+def test_stack_size_is_read():
+    assert parse_item(plain("KAT_FLOWER", count=7)) == Item("KAT_FLOWER", None, 7)
+
+
 def test_runes_keyed_by_type_and_level():
     assert parse_item(rune("RUNE", "MAGIC", 3)).key == "RUNE.MAGIC.3"
     assert parse_item(rune("UNIQUE_RUNE", "EXPLOSIFALL", 3)).key == "UNIQUE_RUNE.EXPLOSIFALL.3"

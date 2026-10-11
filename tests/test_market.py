@@ -19,6 +19,13 @@ def test_lowest_bins_and_listing_count():
     assert result == {"HYPERION": {"lbin": 300, "lbin2": 400, "listings": 3}}
 
 
+def test_stacks_are_priced_per_item():
+    result = summarize_auctions(
+        [auction(plain("KAT_FLOWER", count=7), 3_500_000), auction(plain("KAT_FLOWER"), 600_000)]
+    )
+    assert result["KAT_FLOWER"] == {"lbin": 500_000, "lbin2": 600_000, "listings": 2}
+
+
 def test_pet_level_buckets():
     result = summarize_auctions(
         [

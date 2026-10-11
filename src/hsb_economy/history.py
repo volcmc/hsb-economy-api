@@ -66,20 +66,20 @@ class History:
         for name, (resolution, retention) in RESOLUTIONS.items():
             record(by_resolution[name], now, value, resolution, retention)
 
-    def change(self, key: str, metric: str, now: int, ago: int) -> float | None:
-        """Relative change of a metric versus ``ago`` seconds earlier, e.g. 0.05 for +5%."""
+    def change(self, key: str, metric: str, now: int, ago: int, current: float | None) -> float | None:
+        """Relative change from the value ``ago`` seconds earlier to ``current``, e.g. 0.05 for +5%.
+
+        ``None`` when there is no current value (nothing listed now) or no point that far back.
+        """
         series = self.data.get(key, {}).get(metric)
-        if not series:
+        if current is None or not series:
             return None
         # At exactly the retention boundary the hourly point has already been pruned.
         resolution = "hourly" if ago < config.HOURLY_RETENTION else "daily"
-        points = series[resolution]
-        if not points["v"]:
-            return None
-        then = value_at(points, now - ago)
+        then = value_at(series[resolution], now - ago)
         if not then:
             return None
-        return points["v"][-1] / then - 1
+        return current / then - 1
 
     def prune(self, now: int) -> None:
         """Drop metrics, then keys, that have no points left in any resolution."""

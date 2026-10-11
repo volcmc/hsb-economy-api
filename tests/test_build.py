@@ -1,10 +1,11 @@
 import asyncio
+import json
 import time
 
 import httpx
 
 from hsb_economy import config
-from hsb_economy.build import SalesBatch, SalesFeed, fetch_sales
+from hsb_economy.build import SalesBatch, SalesFeed, fetch_sales, update_last_seen
 
 FEED = SalesFeed("https://feed.test/", "secret")
 NOW_MS = int(time.time() * 1000)
@@ -75,3 +76,66 @@ def test_samples_directly_without_a_feed():
     assert run(lambda request: httpx.Response(200, json=DIRECT), feed=None) == SalesBatch(
         [DIRECT], "direct", None
     )
+
+
+def test_last_seen_remembers_listed_items_and_expires():
+    now = 1_800_000_000
+    last_seen = {"OLD": [now - config.LAST_SEEN_RETENTION - 1, 5], "KEEP": [now - 3_600, 7]}
+    update_last_seen(last_seen, {"A": {"lbin": 10}, "KEEP": {"lbin": None}}, now)
+    assert last_seen == {"A": [now, 10], "KEEP": [now - 3_600, 7]}
+
+
+def test_build_end_to_end(tmp_path, monkeypatch):
+    """Two runs: an item listed in the first and sold out in the second keeps its last lowest BIN."""
+    from conftest import plain
+
+    from hsb_economy import build as build_module
+
+    listings = {
+        "first": [
+            {"uuid": "1", "bin": True, "item_bytes": plain("KAT_FLOWER", count=4), "starting_bid": 2_000}
+        ]
+    }
+    product = {
+        "buy_summary": [{"pricePerUnit": 10.0}],
+        "sell_summary": [{"pricePerUnit": 9.0}],
+        "quick_status": {
+            "buyPrice": 10,
+            "sellPrice": 9,
+            "buyVolume": 1,
+            "sellVolume": 1,
+            "buyMovingWeek": 1,
+            "sellMovingWeek": 1,
+            "buyOrders": 1,
+            "sellOrders": 1,
+        },
+    }
+    run = {"name": "first"}
+
+    async def fake_fetch_all(feed, cursor):
+        now_ms = int(time.time() * 1000)
+        return (
+            {"lastUpdated": now_ms, "products": {"INK_SACK:3": product}},
+            (now_ms, listings.get(run["name"], [])),
+            SalesBatch([{"lastUpdated": now_ms, "auctions": []}], "direct", None),
+            {"items": [{"id": "INK_SACK:3", "name": "Cocoa Beans"}]},
+        )
+
+    monkeypatch.setattr(build_module, "fetch_all", fake_fetch_all)
+    out, state_path = tmp_path / "site", tmp_path / "state.json.gz"
+
+    build_module.build(out, state_path, None, None)
+    auctions = json.loads((out / "v1" / "auctions.json").read_text())["items"]
+    assert auctions["KAT_FLOWER"]["lbin"] == 500
+    assert auctions["KAT_FLOWER"]["name"] == "Kat Flower"
+    bazaar = json.loads((out / "v1" / "bazaar.json").read_text())["products"]
+    assert bazaar["INK_SACK:3"]["name"] == "Cocoa Beans"
+    assert (out / "v1" / "history" / "bazaar" / "INK_SACK-3.json").exists()
+
+    run["name"] = "second"
+    build_module.build(out, state_path, None, None)
+    item = json.loads((out / "v1" / "auctions.json").read_text())["items"]["KAT_FLOWER"]
+    assert item["lbin"] is None and item["listings"] == 0
+    assert item["last_seen"]["lbin"] == 500
+    assert item["trend"] == {"lbin_1d": None, "lbin_7d": None}
+    assert "KAT_FLOWER" not in json.loads((out / "v1" / "prices.json").read_text())["prices"]

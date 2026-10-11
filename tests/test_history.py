@@ -25,9 +25,16 @@ def test_change_against_past_point():
     history = History()
     history.record("X", "lbin", START, 100)
     history.record("X", "lbin", START + config.DAY, 125)
-    assert history.change("X", "lbin", START + config.DAY, config.DAY) == 0.25
-    assert history.change("X", "lbin", START + config.DAY, 7 * config.DAY) is None
-    assert history.change("MISSING", "lbin", START, config.DAY) is None
+    assert history.change("X", "lbin", START + config.DAY, config.DAY, 125) == 0.25
+    assert history.change("X", "lbin", START + config.DAY, 7 * config.DAY, 125) is None
+    assert history.change("MISSING", "lbin", START, config.DAY, 1) is None
+
+
+def test_no_change_without_a_current_value():
+    history = History()
+    history.record("X", "lbin", START, 100)
+    history.record("X", "lbin", START + config.DAY, 125)
+    assert history.change("X", "lbin", START + config.DAY, config.DAY, None) is None
 
 
 def test_seven_day_change_uses_daily_series():
@@ -37,7 +44,7 @@ def test_seven_day_change_uses_daily_series():
     for day in range(8):
         history.record("X", "lbin", START + day * config.DAY + offset, 100 + day * 10)
     now = START + 7 * config.DAY + offset
-    assert history.change("X", "lbin", now, 7 * config.DAY) == 170 / 100 - 1
+    assert history.change("X", "lbin", now, 7 * config.DAY, 170) == 170 / 100 - 1
 
 
 def test_retention_prunes_and_removes_empty_keys():

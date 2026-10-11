@@ -2,7 +2,7 @@
 
 Keys are the Hypixel item id, except where one id covers items with very different values:
 
-- ``PET.<TYPE>.<TIER>``                      e.g. ``PET.ENDER_DRAGON.LEGENDARY``
+- ``PET.<TYPE>.<TIER>``                      e.g. ``PET.ENDER_DRAGON.LEGENDARY`` (tier after any Tier Boost)
 - ``RUNE.<TYPE>.<LEVEL>`` / ``UNIQUE_RUNE...``  e.g. ``RUNE.MAGIC.3``
 - ``ENCHANTMENT_<NAME>_<LEVEL>``             single-enchant books; matches bazaar product ids
 - ``POTION.<EFFECT>.<LEVEL>``                e.g. ``POTION.ABSORPTION.5``
@@ -22,17 +22,20 @@ from nbtlib import File
 
 PET_LEVEL = re.compile(r"^\[Lvl (\d+)\]")
 FORMATTING = re.compile(r"§.")
+PET_TIERS = ("COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC")
 
 
 @dataclass(frozen=True, slots=True)
 class Item:
     key: str
     pet_level: int | None = None
+    # Auctions can sell a stack; their price covers the whole stack.
+    count: int = 1
 
 
-def decode_tag(item_bytes: str) -> dict:
+def decode_item(item_bytes: str) -> dict:
     nbt = File.parse(io.BytesIO(gzip.decompress(base64.b64decode(item_bytes))))
-    return nbt["i"][0]["tag"]
+    return nbt["i"][0]
 
 
 def item_key(extra: dict) -> str | None:
@@ -43,7 +46,11 @@ def item_key(extra: dict) -> str | None:
 
     if item_id == "PET" and "petInfo" in extra:
         pet = json.loads(str(extra["petInfo"]))
-        return f"PET.{pet['type']}.{pet['tier']}"
+        tier = pet["tier"]
+        # petInfo stores the base rarity; a held Tier Boost makes the pet one rarity higher.
+        if pet.get("heldItem") == "PET_ITEM_TIER_BOOST" and tier in PET_TIERS[:-1]:
+            tier = PET_TIERS[PET_TIERS.index(tier) + 1]
+        return f"PET.{pet['type']}.{tier}"
 
     if item_id in ("RUNE", "UNIQUE_RUNE") and extra.get("runes"):
         rune, level = next(iter(extra["runes"].items()))
@@ -67,7 +74,8 @@ def item_key(extra: dict) -> str | None:
 
 
 def parse_item(item_bytes: str) -> Item | None:
-    tag = decode_tag(item_bytes)
+    item = decode_item(item_bytes)
+    tag = item.get("tag", {})
     key = item_key(tag.get("ExtraAttributes", {}))
     if key is None:
         return None
@@ -77,4 +85,4 @@ def parse_item(item_bytes: str) -> Item | None:
         name = FORMATTING.sub("", str(tag.get("display", {}).get("Name", "")))
         if match := PET_LEVEL.match(name):
             level = int(match.group(1))
-    return Item(key, level)
+    return Item(key, level, max(int(item.get("Count", 1)), 1))

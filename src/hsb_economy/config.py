@@ -2,6 +2,7 @@ HYPIXEL_API = "https://api.hypixel.net/v2/skyblock"
 AUCTIONS_URL = f"{HYPIXEL_API}/auctions"
 AUCTIONS_ENDED_URL = f"{HYPIXEL_API}/auctions_ended"
 BAZAAR_URL = f"{HYPIXEL_API}/bazaar"
+ITEMS_URL = "https://api.hypixel.net/v2/resources/skyblock/items"
 
 # Published URL layout. Bump when the output schema changes incompatibly.
 API_VERSION = "v1"
@@ -26,6 +27,8 @@ MIN_OBSERVED_SECONDS_FOR_VOLUME = 3_600
 HOUR = 3_600
 DAY = 86_400
 SALES_RETENTION = 7 * DAY
+# How long an unlisted item keeps reporting its last lowest BIN.
+LAST_SEEN_RETENTION = 30 * DAY
 SEEN_SALE_IDS_LIMIT = 5_000
 HOURLY_RETENTION = 7 * DAY
 DAILY_RETENTION = 365 * DAY
