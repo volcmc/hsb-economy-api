@@ -87,13 +87,17 @@ def test_last_seen_remembers_listed_items_and_expires():
 
 def test_build_end_to_end(tmp_path, monkeypatch):
     """Two runs: an item listed in the first and sold out in the second keeps its last lowest BIN."""
-    from conftest import plain
+    from conftest import item_bytes, plain
+    from nbtlib import Int, String
 
     from hsb_economy import build as build_module
 
+    starred = item_bytes({"id": String("HYPERION"), "upgrade_level": Int(5)})
     listings = {
         "first": [
-            {"uuid": "1", "bin": True, "item_bytes": plain("KAT_FLOWER", count=4), "starting_bid": 2_000}
+            {"uuid": "1", "bin": True, "item_bytes": plain("KAT_FLOWER", count=4), "starting_bid": 2_000},
+            {"uuid": "2", "bin": True, "item_bytes": starred, "starting_bid": 400},
+            {"uuid": "3", "bin": True, "item_bytes": plain("HYPERION"), "starting_bid": 500},
         ]
     }
     product = {
@@ -128,6 +132,10 @@ def test_build_end_to_end(tmp_path, monkeypatch):
     auctions = json.loads((out / "v1" / "auctions.json").read_text())["items"]
     assert auctions["KAT_FLOWER"]["lbin"] == 500
     assert auctions["KAT_FLOWER"]["name"] == "Kat Flower"
+    # No upgraded copies were listed or sold, so there is no separate plain-copy block.
+    assert "plain" not in auctions["KAT_FLOWER"] and "_upgraded" not in auctions["KAT_FLOWER"]
+    assert auctions["HYPERION"]["lbin"] == 400
+    assert auctions["HYPERION"]["plain"] == {"lbin": 500, "listings": 1, "sales": None}
     bazaar = json.loads((out / "v1" / "bazaar.json").read_text())["products"]
     assert bazaar["INK_SACK:3"]["name"] == "Cocoa Beans"
     assert (out / "v1" / "history" / "bazaar" / "INK_SACK-3.json").exists()

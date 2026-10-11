@@ -21,7 +21,8 @@ log = logging.getLogger(__name__)
 class Sales:
     def __init__(self, data: dict | None = None):
         data = data or {}
-        # key -> [[timestamp, price, pet_level | None], ...]
+        # key -> [[timestamp, price, pet_level | None, plain], ...]; samples recorded before plain-copy
+        # tracking have no fourth element and count toward neither plain nor upgraded stats.
         self.samples: dict[str, list[list]] = defaultdict(list, data.get("samples", {}))
         # Insertion-ordered so the oldest ids can be dropped; responses overlap at their edges.
         self.seen: dict[str, None] = dict.fromkeys(data.get("seen", []))
@@ -52,7 +53,7 @@ class Sales:
             if item is None:
                 continue
             price = unit_price(auction["price"], item.count)
-            self.samples[item.key].append([auction["timestamp"] // 1000, price, item.pet_level])
+            self.samples[item.key].append([auction["timestamp"] // 1000, price, item.pet_level, item.plain])
             added += 1
         for stale in list(self.seen)[: max(len(self.seen) - config.SEEN_SALE_IDS_LIMIT, 0)]:
             del self.seen[stale]
@@ -92,7 +93,7 @@ class Sales:
             else None
         )
         levels = defaultdict(list)
-        for _, price, level in samples:
+        for _, price, level, *_ in samples:
             if level in config.PET_LEVEL_BUCKETS:
                 levels[level].append(price)
         if levels:
@@ -100,6 +101,17 @@ class Sales:
                 str(level): summarize(prices, "7d") for level, prices in sorted(levels.items())
             }
         return result
+
+    def has_upgraded(self, key: str) -> bool:
+        return any(len(sample) > 3 and not sample[3] for sample in self.samples.get(key, []))
+
+    def plain_stats(self, key: str, now: int) -> dict | None:
+        """Sale stats over copies sold without common upgrades."""
+        samples = [sample for sample in self.samples.get(key, []) if len(sample) > 3 and sample[3]]
+        if not samples:
+            return None
+        recent = [sample[1] for sample in samples if sample[0] >= now - config.DAY]
+        return summarize(recent, "1d") | summarize([sample[1] for sample in samples], "7d")
 
 
 def summarize(prices: list[float], window: str) -> dict:

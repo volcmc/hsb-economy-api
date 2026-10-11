@@ -24,12 +24,38 @@ PET_LEVEL = re.compile(r"^\[Lvl (\d+)\]")
 FORMATTING = re.compile(r"§.")
 
 
+# Upgrades that raise a copy's price well above a plain one. Reforges and enchantments are left out:
+# most gear carries some, so excluding them would leave almost nothing to price.
+COUNT_UPGRADES = (
+    "upgrade_level",  # stars
+    "dungeon_item_level",  # stars on older items
+    "rarity_upgrades",  # recombobulator
+    "hot_potato_count",  # hot and fuming potato books
+    "art_of_war_count",
+    "artOfPeaceApplied",
+)
+PRESENCE_UPGRADES = ("dye_item", "skin", "ability_scroll", "power_ability_scroll")
+
+
 @dataclass(frozen=True, slots=True)
 class Item:
     key: str
     pet_level: int | None = None
     # Auctions can sell a stack; their price covers the whole stack.
     count: int = 1
+    # False when the copy carries any of the upgrades above.
+    plain: bool = True
+
+
+def is_plain(extra: dict) -> bool:
+    if any(int(extra.get(field, 0)) > 0 for field in COUNT_UPGRADES):
+        return False
+    if any(extra.get(field) for field in PRESENCE_UPGRADES):
+        return False
+    # Applied gemstones; slots that are merely unlocked don't count.
+    if any(slot != "unlocked_slots" for slot in extra.get("gems", {})):
+        return False
+    return not ("petInfo" in extra and "skin" in json.loads(str(extra["petInfo"])))
 
 
 def decode_item(item_bytes: str) -> dict:
@@ -75,7 +101,8 @@ def item_key(extra: dict) -> str | None:
 def parse_item(item_bytes: str) -> Item | None:
     item = decode_item(item_bytes)
     tag = item.get("tag", {})
-    key = item_key(tag.get("ExtraAttributes", {}))
+    extra = tag.get("ExtraAttributes", {})
+    key = item_key(extra)
     if key is None:
         return None
     level = None
@@ -84,4 +111,4 @@ def parse_item(item_bytes: str) -> Item | None:
         name = FORMATTING.sub("", str(tag.get("display", {}).get("Name", "")))
         if match := PET_LEVEL.match(name):
             level = int(match.group(1))
-    return Item(key, level, max(int(item.get("Count", 1)), 1))
+    return Item(key, level, max(int(item.get("Count", 1)), 1), is_plain(extra))

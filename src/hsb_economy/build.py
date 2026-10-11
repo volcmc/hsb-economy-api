@@ -128,7 +128,13 @@ def build(out: Path, state_path: Path, public_url: str | None, feed: SalesFeed |
     update_last_seen(last_seen, auctions, now)
     # Unlisted items stay visible while they have recent sales or a remembered lowest BIN.
     for key in (sales.samples.keys() | last_seen.keys()) - auctions.keys():
-        auctions[key] = {"lbin": None, "lbin2": None, "listings": 0}
+        auctions[key] = {
+            "lbin": None,
+            "lbin2": None,
+            "listings": 0,
+            "plain": {"lbin": None, "listings": 0},
+            "_upgraded": False,
+        }
     observed_day = sales.observed_seconds(now, config.DAY)
     for key, item in auctions.items():
         if item["lbin"] is None and key in last_seen:
@@ -136,6 +142,11 @@ def build(out: Path, state_path: Path, public_url: str | None, feed: SalesFeed |
             item["last_seen"] = {"lbin": lbin, "at": at}
         item["trend"] = trend(auction_history, key, "lbin", now, item["lbin"])
         item["sales"] = sales.stats(key, now, observed_day)
+        # Plain-copy figures are only published where upgraded copies exist; otherwise they'd repeat the
+        # overall ones.
+        plain = item.pop("plain")
+        if item.pop("_upgraded") or sales.has_upgraded(key):
+            item["plain"] = plain | {"sales": sales.plain_stats(key, now)}
     auctions = {key: {"name": display_name(key, names), **item} for key, item in auctions.items()}
 
     prices = {key: item["lbin"] for key, item in auctions.items() if item["lbin"] is not None}

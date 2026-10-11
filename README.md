@@ -12,7 +12,8 @@ delay or skip runs, so data can be an hour old or more; check `meta.json` or eac
 the exact age.
 All timestamps are Unix seconds; all prices are coins.
 
-Browse prices and history in the explorer at **https://volcmc.github.io/hsb-economy-api/**.
+Browse prices, history and rankings (most traded, bazaar margins, biggest 24h movers) in the explorer at
+**https://volcmc.github.io/hsb-economy-api/**.
 
 ## Endpoints
 
@@ -85,6 +86,10 @@ All auction prices are **per item**: a stack of 7 listed for 3.5M counts as 500K
       "levels": { "1": 448999999, "100": 479899999 },  // pets only: lowest BIN at level 1/100/200
       "trend": { "lbin_1d": -0.02, "lbin_7d": 0.05 },  // null when nothing is listed now
       "last_seen": { "lbin": 451000000, "at": 1791690000 },  // only when lbin is null: last lowest BIN, up to 30 days
+      "plain": {                // only for items with upgraded copies; see "Plain copies" below
+        "lbin": 452000000, "listings": 12,
+        "sales": { "count_1d": 2, "median_1d": 455000000, "count_7d": 15, "median_7d": 458000000 }
+      },
       "sales": {                // null if no sales in the last 7 days
         "count_1d": 4, "median_1d": 452000000,
         "count_7d": 31, "median_7d": 455000000, "p25_7d": 449000000, "p75_7d": 462000000,
@@ -104,8 +109,13 @@ sample was used instead. Only BIN sales are counted.
 
 **What sale stats measure:** sales are grouped by the same key as listings, so they include upgraded copies
 (stars, enchantments, gemstones, recombobulated, pet skins). For gear that's commonly upgraded, the sale
-median can sit well above `lbin`. Use `lbin` (or `p25_7d`) for the price of a plain copy, and the median
+median can sit well above `lbin`. Use `plain` for the price of an unupgraded copy, and the overall median
 for what that item typically sells for.
+
+**Plain copies:** `plain` covers only copies without stars, a recombobulator, hot/fuming potato books,
+applied gemstones, Art of War/Peace, ability scrolls, dyes or skins. Reforges and enchantments are allowed,
+since most gear carries some. It appears only on items where an upgraded copy is listed or sold; for every
+other item the overall numbers already are the plain ones. `plain.sales` is `null` until a plain copy sells.
 
 Items that drop off the auction house stay in `auctions.json` while they have sales from the last 7 days or
 a `last_seen` lowest BIN from the last 30 days.

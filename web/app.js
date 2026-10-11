@@ -7,6 +7,11 @@ const HOUR = 3600;
 const DAY = 86400;
 const STALE_AFTER_SECONDS = 2 * HOUR;
 const MAX_RESULTS = 20;
+const RANKING_ROWS = 10;
+// Movers are only ranked when there's enough trading for a 24h change to mean something.
+const MIN_MOVER_LISTINGS = 5;
+const MIN_MOVER_SALES_1D = 3;
+const MIN_BAZAAR_UNITS_PER_DAY = 1_000;
 
 const SERIES = {
   bazaar: [
@@ -84,21 +89,22 @@ function buildIndex() {
   for (const [key, product] of Object.entries(state.bazaar)) {
     const price = product.buy ?? product.sell;
     const dailyVolume = (product.buy_moving_week + product.sell_moving_week) / 7;
-    items.push(indexEntry("bazaar", key, product.name, price, dailyVolume * (price ?? 0)));
+    items.push(indexEntry("bazaar", key, product.name, price, dailyVolume * (price ?? 0), 0));
   }
   for (const [key, item] of Object.entries(state.auctions)) {
     const sales = item.sales;
     const perDay = sales ? (sales.est_volume_1d ?? sales.count_7d / 7) : 0;
     const salePrice = sales?.median_7d ?? item.lbin ?? 0;
     // Listings break ties for items with no recorded sales.
-    items.push(indexEntry("auctions", key, item.name, item.lbin ?? item.last_seen?.lbin, perDay * salePrice + item.listings));
+    items.push(indexEntry("auctions", key, item.name, item.lbin ?? item.last_seen?.lbin, perDay * salePrice, item.listings));
   }
   items.sort((a, b) => b.activity - a.activity);
   state.items = items;
 }
 
-function indexEntry(source, key, name = key, price, activity) {
-  return { source, key, name, price, activity, haystack: `${name} ${key}`.toLowerCase().replaceAll("_", " ") };
+function indexEntry(source, key, name = key, price, turnover, tiebreak) {
+  const haystack = `${name} ${key}`.toLowerCase().replaceAll("_", " ");
+  return { source, key, name, price, turnover, activity: turnover + tiebreak, haystack };
 }
 
 /* ---------- status ---------- */
@@ -302,6 +308,20 @@ function auctionTiles(item) {
   return tiles;
 }
 
+function plainTiles(item) {
+  const section = $("item-plain");
+  const plain = item.plain;
+  section.hidden = !plain;
+  if (!plain) return;
+  const sales = plain.sales;
+  $("plain-tiles").replaceChildren(
+    tile("Lowest BIN", coins(plain.lbin), plain.lbin === null ? "no plain copy listed" : null, exact(plain.lbin)),
+    tile("Listings", count(plain.listings), `of ${count(item.listings)} total`),
+    tile("Median sale (24h)", coins(sales?.median_1d), `${count(sales?.count_1d ?? 0)} sales`, exact(sales?.median_1d)),
+    tile("Median sale (7d)", coins(sales?.median_7d), `${count(sales?.count_7d ?? 0)} sales`, exact(sales?.median_7d)),
+  );
+}
+
 function petLevels(item) {
   const container = $("item-levels");
   container.replaceChildren();
@@ -350,8 +370,13 @@ async function showItem(source, key) {
   $("item-key").textContent = key;
   $("copy-key").textContent = "Copy key";
   $("item-tiles").replaceChildren(...(source === "bazaar" ? bazaarTiles(data) : auctionTiles(data)));
-  if (source === "auctions") petLevels(data);
-  else $("item-levels").replaceChildren();
+  if (source === "auctions") {
+    plainTiles(data);
+    petLevels(data);
+  } else {
+    $("item-plain").hidden = true;
+    $("item-levels").replaceChildren();
+  }
   $("chart-title").textContent = source === "bazaar" ? "Instant buy and sell history" : "Lowest BIN history";
   document.title = `${data.name ?? key} · HSB Economy API`;
   await renderHistory();
@@ -410,6 +435,132 @@ function route() {
     return;
   }
   showItem(match[1], decodeURIComponent(match[2]));
+}
+
+/* ---------- rankings ---------- */
+
+function bazaarUnitsPerDay(product) {
+  return Math.min(product.buy_moving_week, product.sell_moving_week) / 7;
+}
+
+function movers(direction) {
+  const candidates = [];
+  for (const entry of state.items) {
+    if (entry.source === "auctions") {
+      const item = state.auctions[entry.key];
+      const delta = item.trend?.lbin_1d;
+      if (delta == null || item.listings < MIN_MOVER_LISTINGS || (item.sales?.count_1d ?? 0) < MIN_MOVER_SALES_1D) continue;
+      candidates.push({ entry, delta });
+    } else {
+      const product = state.bazaar[entry.key];
+      const delta = product.trend?.buy_1d;
+      if (delta == null || bazaarUnitsPerDay(product) < MIN_BAZAAR_UNITS_PER_DAY) continue;
+      candidates.push({ entry, delta });
+    }
+  }
+  return candidates
+    .filter(({ delta }) => direction * delta > 0)
+    .sort((a, b) => direction * (b.delta - a.delta))
+    .slice(0, RANKING_ROWS)
+    .map(({ entry, delta }) => ({ entry, cells: [coins(entry.price), change(delta)] }));
+}
+
+const RANKINGS = {
+  traded: {
+    note: "Estimated coins traded per day: bazaar weekly volume, or auction sales per day × median sale price.",
+    columns: ["Price", "Traded per day"],
+    rows: () =>
+      state.items
+        .filter((entry) => entry.turnover > 0)
+        .sort((a, b) => b.turnover - a.turnover)
+        .slice(0, RANKING_ROWS)
+        .map((entry) => ({ entry, cells: [coins(entry.price), coins(entry.turnover)] })),
+  },
+  margins: {
+    note: "Instant buy minus instant sell, times the smaller side's daily volume. Before bazaar tax and ignoring competition from other flippers.",
+    columns: ["Spread", "Spread × volume per day"],
+    rows: () =>
+      state.items
+        .filter((entry) => entry.source === "bazaar")
+        .map((entry) => {
+          const product = state.bazaar[entry.key];
+          const spread = product.buy !== null && product.sell !== null ? product.buy - product.sell : 0;
+          return { entry, spread, potential: spread * bazaarUnitsPerDay(product) };
+        })
+        .filter(({ spread }) => spread > 0)
+        .sort((a, b) => b.potential - a.potential)
+        .slice(0, RANKING_ROWS)
+        .map(({ entry, spread, potential }) => ({ entry, cells: [coins(spread), coins(potential)] })),
+  },
+  rising: {
+    note: `Biggest 24h price rises among actively traded items (auction: at least ${MIN_MOVER_LISTINGS} listings and ${MIN_MOVER_SALES_1D} sales today; bazaar: at least ${count(MIN_BAZAAR_UNITS_PER_DAY)} units a day).`,
+    columns: ["Price", "24h change"],
+    rows: () => movers(1),
+  },
+  falling: {
+    note: "Biggest 24h price drops among the same actively traded items.",
+    columns: ["Price", "24h change"],
+    rows: () => movers(-1),
+  },
+};
+
+function renderRanking(name) {
+  const ranking = RANKINGS[name];
+  $("rankings-note").textContent = ranking.note;
+  const table = document.createElement("table");
+  const caption = document.createElement("caption");
+  caption.className = "visually-hidden";
+  caption.textContent = `Rankings: ${document.querySelector(`[data-ranking="${name}"]`).textContent}`;
+  table.append(caption);
+  const head = table.createTHead().insertRow();
+  for (const [text, numeric] of [["#", false], ["Item", false], ...ranking.columns.map((column) => [column, true])]) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = text;
+    if (numeric) th.className = "num";
+    head.append(th);
+  }
+  const body = table.createTBody();
+  const rows = ranking.rows();
+  if (!rows.length) {
+    const cell = body.insertRow().insertCell();
+    cell.colSpan = 2 + ranking.columns.length;
+    cell.className = "empty-row";
+    cell.textContent = name === "rising" || name === "falling"
+      ? "Needs a day of price history. Check back tomorrow."
+      : "Nothing to rank yet.";
+  }
+  rows.forEach(({ entry, cells }, index) => {
+    const row = body.insertRow();
+    const rank = row.insertCell();
+    rank.className = "rank";
+    rank.textContent = String(index + 1);
+    const itemCell = row.insertCell();
+    const link = document.createElement("a");
+    link.href = `#${entry.source}/${encodeURIComponent(entry.key)}`;
+    link.textContent = entry.name;
+    const source = document.createElement("span");
+    source.className = "source";
+    source.textContent = entry.source === "bazaar" ? " · Bazaar" : " · Auction";
+    itemCell.append(link, source);
+    for (const text of cells) {
+      const cell = row.insertCell();
+      cell.className = "num";
+      cell.textContent = text;
+    }
+  });
+  $("rankings-table").replaceChildren(table);
+}
+
+function bindRankings() {
+  const buttons = document.querySelectorAll("[data-ranking]");
+  for (const button of buttons) {
+    button.addEventListener("click", () => {
+      for (const other of buttons) other.setAttribute("aria-pressed", String(other === button));
+      renderRanking(button.dataset.ranking);
+    });
+  }
+  renderRanking("traded");
 }
 
 /* ---------- chart ---------- */
@@ -742,6 +893,7 @@ async function init() {
   }
   bindSearch();
   renderSuggestions();
+  bindRankings();
   window.addEventListener("hashchange", route);
   route();
 }
