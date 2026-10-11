@@ -1,5 +1,9 @@
-.env
-cache/
-data/
-logs/
 __pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Local build output and pipeline state
+site/
+state/
