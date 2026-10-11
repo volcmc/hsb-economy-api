@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HSB Economy API</title>
+  <meta name="description" content="Free static JSON API for Hypixel SkyBlock bazaar and auction prices, sale stats and price history.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 12l4-4 3 3 5-6' fill='none' stroke='%232a78d6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="page-header">
+    <div class="wrap">
+      <h1>HSB Economy API</h1>
+      <p class="lede">Hypixel SkyBlock bazaar and auction prices as static JSON, rebuilt hourly. Free, no key, CORS-enabled.</p>
+      <p class="status" id="status" role="status" aria-live="polite">Loading latest data…</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section aria-labelledby="explorer-title" class="explorer">
+      <h2 id="explorer-title">Price explorer</h2>
+      <div class="search">
+        <label for="search-input" class="visually-hidden">Search items</label>
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false"
+               placeholder="Search items, e.g. hyperion"
+               role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list" disabled>
+        <ul id="search-results" role="listbox" aria-label="Matching items" hidden></ul>
+      </div>
+      <div id="suggestions" class="suggestions" aria-label="Popular items"></div>
+
+      <article id="item" class="item" hidden aria-live="polite">
+        <header class="item-header">
+          <div>
+            <p class="item-source" id="item-source"></p>
+            <h3 id="item-name"></h3>
+            <p class="item-key"><code id="item-key"></code>
+              <button type="button" class="link-button" id="copy-key">Copy key</button></p>
+          </div>
+        </header>
+        <div class="tiles" id="item-tiles"></div>
+        <div id="item-levels"></div>
+
+        <section class="chart-card" aria-labelledby="chart-title">
+          <div class="chart-head">
+            <h4 id="chart-title">Price history</h4>
+            <div class="segmented" role="group" aria-label="History range">
+              <button type="button" data-range="hourly" aria-pressed="true">7 days</button>
+              <button type="button" data-range="daily" aria-pressed="false">1 year</button>
+            </div>
+          </div>
+          <div id="chart-legend" class="legend"></div>
+          <div id="chart" class="chart"></div>
+          <details class="table-view">
+            <summary>Show data table</summary>
+            <div id="chart-table"></div>
+          </details>
+        </section>
+      </article>
+    </section>
+
+    <section aria-labelledby="endpoints-title" class="endpoints">
+      <h2 id="endpoints-title">Endpoints</h2>
+      <p>All files live under <code id="base-url">/v1/</code>. Timestamps are Unix seconds; prices are coins.
+        Full schemas are in the <a href="https://github.com/volcmc/hsb-economy-api#readme">README</a>.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th scope="col">File</th><th scope="col">Contents</th></tr></thead>
+          <tbody>
+            <tr><td><a href="v1/prices.json"><code>v1/prices.json</code></a></td><td>Cheapest current way to buy each item: bazaar instant buy or lowest BIN.</td></tr>
+            <tr><td><a href="v1/bazaar.json"><code>v1/bazaar.json</code></a></td><td>Every bazaar product with order-book prices, volumes and trends.</td></tr>
+            <tr><td><a href="v1/auctions.json"><code>v1/auctions.json</code></a></td><td>Every auctioned item with lowest BIN, listings, sale stats and trends.</td></tr>
+            <tr><td><code>v1/history/bazaar/&lt;id&gt;.json</code></td><td>Hourly (7 days) and daily (1 year) instant buy/sell history.</td></tr>
+            <tr><td><code>v1/history/auctions/&lt;key&gt;.json</code></td><td>Hourly and daily lowest BIN and listing-count history.</td></tr>
+            <tr><td><a href="v1/meta.json"><code>v1/meta.json</code></a></td><td>Build time, source timestamps, counts and sales coverage.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <pre><code id="example">const { prices } = await (await fetch("https://volcmc.github.io/hsb-economy-api/v1/prices.json")).json();
+console.log(prices["HYPERION"]);</code></pre>
+    </section>
+  </main>
+
+  <footer class="wrap page-footer">
+    <p>Data from the public Hypixel API. Not affiliated with Hypixel.
+      <a href="https://github.com/volcmc/hsb-economy-api">Source on GitHub</a></p>
+  </footer>
+</body>
+</html>
