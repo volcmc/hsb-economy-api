@@ -55,6 +55,9 @@ jobs:
           HSB_SALES_URL: ${{ vars.HSB_SALES_URL }}
           HSB_SALES_TOKEN: ${{ secrets.HSB_SALES_TOKEN }}
 
+      - name: Add explorer page
+        run: cp -r web/. site/
+
       - uses: actions/cache/save@v6
         with:
           path: state
