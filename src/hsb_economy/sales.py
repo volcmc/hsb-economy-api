@@ -13,6 +13,7 @@ from collections import defaultdict
 
 from . import config
 from .items import parse_item
+from .market import unit_price
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +51,8 @@ class Sales:
                 continue
             if item is None:
                 continue
-            self.samples[item.key].append([auction["timestamp"] // 1000, auction["price"], item.pet_level])
+            price = unit_price(auction["price"], item.count)
+            self.samples[item.key].append([auction["timestamp"] // 1000, price, item.pet_level])
             added += 1
         for stale in list(self.seen)[: max(len(self.seen) - config.SEEN_SALE_IDS_LIMIT, 0)]:
             del self.seen[stale]
@@ -77,11 +79,11 @@ class Sales:
             previous = t
         return observed
 
-    def stats(self, key: str, now: int) -> dict | None:
+    def stats(self, key: str, now: int, observed_day: int) -> dict | None:
+        """Sale stats for one key; ``observed_day`` is ``observed_seconds(now, DAY)``, computed once."""
         samples = self.samples.get(key)
         if not samples:
             return None
-        observed_day = self.observed_seconds(now, config.DAY)
         result = summarize([s[1] for s in samples if s[0] >= now - config.DAY], "1d")
         result |= summarize([s[1] for s in samples], "7d")
         result["est_volume_1d"] = (

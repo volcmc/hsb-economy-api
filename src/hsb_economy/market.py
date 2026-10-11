@@ -32,8 +32,15 @@ def summarize_bazaar(products: dict) -> dict:
     return result
 
 
+def unit_price(total: float, count: int) -> float:
+    return total if count == 1 else round(total / count, 2)
+
+
 def summarize_auctions(auctions: list[dict]) -> dict:
-    """Lowest BIN, second-lowest BIN and listing count per item key, plus per-level lowest BIN for pets."""
+    """Per-item lowest BIN, second-lowest BIN and listing count per key, plus per-level lowest BIN for pets.
+
+    Prices are per item: a stack listed at 15 for 13M counts as 866,666.67 each.
+    """
     prices: dict[str, list[float]] = defaultdict(list)
     pet_levels: dict[str, dict[int, float]] = defaultdict(dict)
     skipped = 0
@@ -48,7 +55,7 @@ def summarize_auctions(auctions: list[dict]) -> dict:
             continue
         if item is None:
             continue
-        price = auction["starting_bid"]
+        price = unit_price(auction["starting_bid"], item.count)
         prices[item.key].append(price)
         if item.pet_level in config.PET_LEVEL_BUCKETS:
             levels = pet_levels[item.key]
