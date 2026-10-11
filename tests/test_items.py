@@ -12,12 +12,8 @@ def test_pet_key_includes_type_tier_and_level():
     assert parse_item(pet("ENDER_DRAGON", "LEGENDARY", 100)) == Item("PET.ENDER_DRAGON.LEGENDARY", 100)
 
 
-def test_tier_boost_files_pet_under_boosted_rarity():
-    assert (
-        parse_item(pet("ENDER_DRAGON", "EPIC", 100, "PET_ITEM_TIER_BOOST")).key
-        == "PET.ENDER_DRAGON.LEGENDARY"
-    )
-    assert parse_item(pet("BEE", "MYTHIC", 1, "PET_ITEM_TIER_BOOST")).key == "PET.BEE.MYTHIC"
+def test_tier_boosted_pets_are_unpriced():
+    assert parse_item(pet("ENDER_DRAGON", "EPIC", 100, "PET_ITEM_TIER_BOOST")) is None
     assert parse_item(pet("BEE", "RARE", 1, "PET_ITEM_EXP_SHARE")).key == "PET.BEE.RARE"
 
 

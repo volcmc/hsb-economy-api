@@ -2,7 +2,7 @@
 
 Keys are the Hypixel item id, except where one id covers items with very different values:
 
-- ``PET.<TYPE>.<TIER>``                      e.g. ``PET.ENDER_DRAGON.LEGENDARY`` (tier after any Tier Boost)
+- ``PET.<TYPE>.<TIER>``                      e.g. ``PET.ENDER_DRAGON.LEGENDARY``
 - ``RUNE.<TYPE>.<LEVEL>`` / ``UNIQUE_RUNE...``  e.g. ``RUNE.MAGIC.3``
 - ``ENCHANTMENT_<NAME>_<LEVEL>``             single-enchant books; matches bazaar product ids
 - ``POTION.<EFFECT>.<LEVEL>``                e.g. ``POTION.ABSORPTION.5``
@@ -22,7 +22,6 @@ from nbtlib import File
 
 PET_LEVEL = re.compile(r"^\[Lvl (\d+)\]")
 FORMATTING = re.compile(r"§.")
-PET_TIERS = ("COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC")
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,11 +45,11 @@ def item_key(extra: dict) -> str | None:
 
     if item_id == "PET" and "petInfo" in extra:
         pet = json.loads(str(extra["petInfo"]))
-        tier = pet["tier"]
-        # petInfo stores the base rarity; a held Tier Boost makes the pet one rarity higher.
-        if pet.get("heldItem") == "PET_ITEM_TIER_BOOST" and tier in PET_TIERS[:-1]:
-            tier = PET_TIERS[PET_TIERS.index(tier) + 1]
-        return f"PET.{pet['type']}.{tier}"
+        if pet.get("heldItem") == "PET_ITEM_TIER_BOOST":
+            # Displays one rarity up but trades as a cheaper base pet plus a boost: filed under either
+            # rarity it would distort that rarity's prices, so it is left unpriced.
+            return None
+        return f"PET.{pet['type']}.{pet['tier']}"
 
     if item_id in ("RUNE", "UNIQUE_RUNE") and extra.get("runes"):
         rune, level = next(iter(extra["runes"].items()))
