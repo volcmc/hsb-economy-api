@@ -1,0 +1,15 @@
+{
+  "name": "hsb-economy-sales",
+  "private": true,
+  "description": "Records every Hypixel auctions_ended response so the Pages pipeline sees all sales.",
+  "license": "MIT",
+  "scripts": {
+    "check": "wrangler types --check && tsc --noEmit",
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler d1 migrations apply hsb-economy-sales --remote && wrangler deploy"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "wrangler": "4.149.0"
+  }
+}

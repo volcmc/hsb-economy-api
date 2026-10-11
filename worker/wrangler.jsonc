@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "hsb-economy-sales",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hsb-economy-sales",
+      "database_id": "fa62d5df-b88f-4268-9b5a-3eb58e16fb29",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "secrets": {
+    // Bearer token the GitHub workflow uses to read /ended.
+    "required": ["SALES_TOKEN"]
+  },
+  "observability": {
+    "enabled": true
+  }
+}
