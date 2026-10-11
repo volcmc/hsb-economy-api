@@ -3,7 +3,8 @@ name: Update data
 on:
   schedule:
     # Offset from the top of the hour, when GitHub's scheduler is most congested and drops runs.
-    - cron: "2-59/5 * * * *"
+    # Sales come from the Worker feed, so this cadence only affects how fresh prices are.
+    - cron: "2-59/10 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -51,6 +52,8 @@ jobs:
         run: python -m hsb_economy --out site --state state/state.json.gz
         env:
           HSB_PUBLIC_URL: ${{ steps.pages.outputs.base_url }}
+          HSB_SALES_URL: ${{ vars.HSB_SALES_URL }}
+          HSB_SALES_TOKEN: ${{ secrets.HSB_SALES_TOKEN }}
 
       - uses: actions/cache/save@v6
         with:
