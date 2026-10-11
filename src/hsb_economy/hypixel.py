@@ -74,20 +74,52 @@ async def fetch_sales_feed(client: httpx.AsyncClient, url: str, token: str, afte
         after = page["responses"][-1]["lastUpdated"]
 
 
-async def fetch_auction_snapshot(client: httpx.AsyncClient) -> tuple[int, list[dict]]:
-    """Fetch every active-auction page from a single Hypixel update.
+async def fetch_pages(client: httpx.AsyncClient, pages: list[int]) -> dict[int, dict]:
+    responses = await asyncio.gather(
+        *(get_json(client, config.AUCTIONS_URL, {"page": page}) for page in pages)
+    )
+    return dict(zip(pages, responses, strict=True))
 
-    :return: (lastUpdated in ms, all auctions)
+
+def lagging_pages(pages: dict[int, dict]) -> tuple[dict, list[int]]:
+    """The newest page, and every page index missing or behind it (dropping pages past its totalPages)."""
+    newest = max(pages.values(), key=lambda page: page["lastUpdated"])
+    for index in [index for index in pages if index >= newest["totalPages"]]:
+        del pages[index]
+    behind = [
+        index
+        for index in range(newest["totalPages"])
+        if index not in pages or pages[index]["lastUpdated"] != newest["lastUpdated"]
+    ]
+    return newest, behind
+
+
+async def fetch_auction_snapshot(client: httpx.AsyncClient) -> tuple[int, list[dict]]:
+    """Fetch every active-auction page, converging on Hypixel's newest update.
+
+    Pages can come from different updates, either because Hypixel regenerated them mid-fetch or because
+    a CDN copy lags behind. Only the lagging pages are refetched. If they never converge, the mixed
+    snapshot is used: pages a minute or two old barely move lowest BINs, while failing would stall
+    every dataset.
+
+    :return: (lastUpdated in ms of the newest page, all auctions)
     """
-    for attempt in range(config.SNAPSHOT_ATTEMPTS):
-        first = await get_json(client, config.AUCTIONS_URL, {"page": 0})
-        updated = first["lastUpdated"]
-        rest = await asyncio.gather(
-            *(get_json(client, config.AUCTIONS_URL, {"page": page}) for page in range(1, first["totalPages"]))
+    first = await get_json(client, config.AUCTIONS_URL, {"page": 0})
+    pages = {0: first} | await fetch_pages(client, list(range(1, first["totalPages"])))
+    for attempt in range(config.SNAPSHOT_ATTEMPTS + 1):
+        newest, behind = lagging_pages(pages)
+        if not behind or attempt == config.SNAPSHOT_ATTEMPTS:
+            break
+        log.warning(
+            "%d auction pages behind the newest update (attempt %d); refetching", len(behind), attempt + 1
         )
-        if all(page["lastUpdated"] == updated for page in rest):
-            auctions = [auction for page in (first, *rest) for auction in page["auctions"]]
-            log.info("Fetched %d auctions across %d pages", len(auctions), first["totalPages"])
-            return updated, auctions
-        log.warning("Auction pages changed mid-fetch (attempt %d), refetching", attempt + 1)
-    raise HypixelError(f"No consistent auction snapshot after {config.SNAPSHOT_ATTEMPTS} attempts")
+        await asyncio.sleep(config.SNAPSHOT_RETRY_DELAY)
+        pages |= await fetch_pages(client, behind)
+    if behind:
+        versions = len({page["lastUpdated"] for page in pages.values()})
+        log.warning("Auction pages never converged; using a snapshot spanning %d updates", versions)
+
+    # A mixed snapshot can list an auction twice when it moved between pages across updates.
+    auctions = list({a["uuid"]: a for index in sorted(pages) for a in pages[index]["auctions"]}.values())
+    log.info("Fetched %d auctions across %d pages", len(auctions), len(pages))
+    return newest["lastUpdated"], auctions

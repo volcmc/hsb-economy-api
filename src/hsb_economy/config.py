@@ -9,9 +9,10 @@ API_VERSION = "v1"
 REQUEST_TIMEOUT = 30.0
 REQUEST_RETRIES = 4
 PAGE_CONCURRENCY = 10
-# Hypixel regenerates the auction pages roughly once a minute; a snapshot is only consistent
-# when every page reports the same lastUpdated.
-SNAPSHOT_ATTEMPTS = 3
+# Hypixel regenerates the auction pages roughly once a minute. Pages behind the newest update are
+# refetched up to SNAPSHOT_ATTEMPTS times, SNAPSHOT_RETRY_DELAY seconds apart.
+SNAPSHOT_ATTEMPTS = 4
+SNAPSHOT_RETRY_DELAY = 5.0
 
 # auctions_ended only covers the most recent 60 seconds of sales.
 ENDED_WINDOW_SECONDS = 60
